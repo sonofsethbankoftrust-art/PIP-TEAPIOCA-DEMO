@@ -1,0 +1,2129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+    /* ============ ZERO-CRASH SHIELD — installed before anything else ============
+       Any unexpected fault anywhere (event handler, timer, animation frame,
+       observer, promise) is caught, logged, and recovered from: the page never
+       blanks, the demo view is restored if a fault hid it, and controls stay
+       live. Handlers installed through addEventListener / setTimeout /
+       setInterval / requestAnimationFrame after this point are auto-wrapped. */
+    (function(){
+      var shield = { errors: [], recovered: 0, ready: false };
+      window.__pipShield = shield;
+      function note(kind, msg){
+        try{
+          shield.errors.push({ kind: kind, msg: String(msg || 'unknown').slice(0, 240), at: Date.now() });
+          if(shield.errors.length > 60) shield.errors.shift();
+          shield.recovered++;
+          if(window.console && console.warn) console.warn('[Pip shield] recovered from ' + kind + ': ' + msg);
+        }catch(_){}
+      }
+      function recover(){
+        try{
+          var d = document;
+          if(!d || !d.body) return;
+          var demo = d.getElementById('viewDemo'), pitch = d.getElementById('viewPitch');
+          /* never leave both views hidden (blank page) */
+          if(demo && pitch && demo.classList.contains('hidden') && pitch.classList.contains('hidden')){
+            pitch.classList.add('hidden'); demo.classList.remove('hidden');
+          }
+          /* a stuck disabled Next with a drink picked is a dead state — re-arm it */
+          var next1 = d.getElementById('next1');
+          if(next1 && next1.disabled){
+            var sel = d.querySelector('.drink.sel');
+            if(sel) next1.disabled = false;
+          }
+        }catch(_){}
+      }
+      window.__pipOnError = function(kind, msg){ note(kind, msg); recover(); };
+      window.addEventListener('error', function(e){
+        try{
+          /* a failed resource fetch (e.g. a webfont in a sandboxed webview)
+             arrives here with no message and an element target — it is not a
+             script fault, nothing crashed, so log it apart and move on */
+          if(e && !e.message && e.target && e.target !== window && e.target.tagName){
+            shield.errors.push({ kind: 'resource', msg: 'resource failed: ' + e.target.tagName, at: Date.now() });
+            return;
+          }
+          note('error', e && (e.message || (e.error && e.error.message))); recover(); if(e && e.preventDefault) e.preventDefault();
+        }catch(_){}
+      }, true);
+      window.addEventListener('unhandledrejection', function(e){
+        try{ note('promise', e && e.reason && (e.reason.message || e.reason)); recover(); if(e && e.preventDefault) e.preventDefault(); }catch(_){}
+      });
+      function wrapFn(fn){
+        if(typeof fn !== 'function' || fn.__pipWrapped) return fn;
+        var w = function(){
+          try{ return fn.apply(this, arguments); }
+          catch(err){ note('callback', err && err.message); recover(); }
+        };
+        w.__pipWrapped = true; w.__pipOrig = fn;
+        return w;
+      }
+      /* timers: a throwing timeout dies alone; a throwing interval is stopped
+         after 5 strikes so it can never flood the page with errors */
+      var _st = window.setTimeout.bind(window), _si = window.setInterval.bind(window), _ci = window.clearInterval.bind(window);
+      window.setTimeout = function(fn, delay){
+        var args = Array.prototype.slice.call(arguments, 2);
+        if(typeof fn === 'function'){ var orig = fn; fn = function(){ try{ orig.apply(this, args); }catch(err){ note('timeout', err && err.message); recover(); } }; args = []; }
+        return _st.apply(null, [fn, delay].concat(args));
+      };
+      window.setInterval = function(fn, delay){
+        var args = Array.prototype.slice.call(arguments, 2), strikes = 0, id = null;
+        if(typeof fn === 'function'){ var orig = fn; fn = function(){ try{ orig.apply(this, args); }catch(err){ strikes++; note('interval', err && err.message); recover(); if(strikes >= 5 && id !== null) _ci(id); } }; args = []; }
+        id = _si.apply(null, [fn, delay].concat(args));
+        return id;
+      };
+      var _raf = window.requestAnimationFrame ? window.requestAnimationFrame.bind(window) : null;
+      if(_raf){
+        window.requestAnimationFrame = function(fn){
+          if(typeof fn !== 'function') return _raf(fn);
+          return _raf(function(ts){ try{ fn(ts); }catch(err){ note('frame', err && err.message); recover(); } });
+        };
+      }
+      /* every listener registered from now on runs inside the safety net;
+         removeEventListener still finds the original via the wrapper map */
+      if(window.EventTarget && EventTarget.prototype && EventTarget.prototype.addEventListener){
+        var _add = EventTarget.prototype.addEventListener, _rem = EventTarget.prototype.removeEventListener;
+        EventTarget.prototype.addEventListener = function(type, listener, options){
+          if(!listener) return _add.call(this, type, listener, options);
+          if(typeof listener === 'function'){
+            var w = wrapFn(listener);
+            try{ listener.__pipWrappedFor = w; }catch(_){}
+            return _add.call(this, type, w, options);
+          }
+          if(typeof listener === 'object' && typeof listener.handleEvent === 'function'){
+            var self = listener;
+            var proxy = { handleEvent: function(ev){ try{ self.handleEvent(ev); }catch(err){ note('listener', err && err.message); recover(); } } };
+            try{ listener.__pipWrappedFor = proxy; }catch(_){}
+            return _add.call(this, type, proxy, options);
+          }
+          return _add.call(this, type, listener, options);
+        };
+        EventTarget.prototype.removeEventListener = function(type, listener, options){
+          var target = (listener && listener.__pipWrappedFor) || listener;
+          return _rem.call(this, type, target, options);
+        };
+      }
+      /* watchdog: if the main script never signals ready, surface the demo
+         view again rather than leaving a dead page */
+      window.addEventListener('DOMContentLoaded', function(){
+        _st(function(){
+          if(!shield.ready){
+            note('watchdog', 'main script did not signal ready');
+            try{
+              var demo = document.getElementById('viewDemo');
+              if(demo) demo.classList.remove('hidden');
+              var b = document.getElementById('bubble');
+              if(b && !b.textContent) b.textContent = "Hey! I'm Pip! Pick a drink and let's make some magic together!";
+            }catch(_){}
+          }
+        }, 5000);
+      });
+    })();
+    </script>
+    <link rel="icon" href="data:," />
+    <title>Teapioca Interactive Ordering — Pitch Demo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito:ital,wght@0,400;0,600;0,700;0,800;1,600&display=swap" rel="stylesheet" />
+    <style>
+      :root{
+        --bg:#fff6ec; --bg2:#fdeef3;
+        --card:#ffffff; --card2:#fffaf3;
+        --ink:#33202e; --ink-soft:#75606f;
+        --line:#f0d7de;
+        --pink:#e93d75; --pink-soft:#ff5d8f;
+        --tea:#7a4a21; --tea-deep:#4c2c12;
+        --mango:#ff9f2e; --matcha:#58b368; --taro:#9a6ee8;
+        --gold:#f5b921;
+        --chip:#fdeef3;
+        --shadow:0 10px 30px rgba(160,50,90,.13);
+      }
+      @media (prefers-color-scheme: dark){
+        :root{
+          --bg:#20121f; --bg2:#2a1829;
+          --card:#301b31; --card2:#38203a;
+          --ink:#ffedf4; --ink-soft:#d5b6c8;
+          --line:#4e3050;
+          --chip:#42264a;
+          --shadow:0 10px 30px rgba(0,0,0,.4);
+        }
+      }
+      *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+      html{scroll-behavior:smooth;}
+      body{
+        margin:0; color:var(--ink);
+        font-family:"Nunito",system-ui,sans-serif;
+        background:
+          radial-gradient(340px 340px at 8% -60px, rgba(255,159,46,.25), transparent 70%),
+          radial-gradient(420px 420px at 105% 120px, rgba(154,110,232,.20), transparent 70%),
+          radial-gradient(380px 380px at 50% 115%, rgba(88,179,104,.16), transparent 70%),
+          linear-gradient(180deg, var(--bg), var(--bg2));
+        min-height:100vh;
+      }
+      h1,h2,h3,.baloo{font-family:"Baloo 2","Nunito",sans-serif;}
+      button{font-family:inherit; cursor:pointer;}
+      /* bottom padding reserves a clear patrol lane for the fixed roaming Pip
+         (flag + body + shadow ≈ 155px tall) so page content always scrolls clear of him */
+      .wrap{max-width:1080px; margin:0 auto; padding:14px 16px 216px;}
+
+      /* ---------- top nav ---------- */
+      .topbar{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:6px;}
+      .seg{display:flex; background:var(--card); border:2px solid var(--line); border-radius:999px; padding:4px; box-shadow:var(--shadow);}
+      .seg button{border:0; background:transparent; color:var(--ink-soft); font-weight:800; font-size:15px; padding:10px 18px; border-radius:999px; min-height:44px;}
+      .seg button.active{background:var(--pink); color:#fff; box-shadow:0 4px 14px rgba(233,61,117,.45);}
+      .demo-badge{margin-left:auto; font-family:"Baloo 2"; font-weight:800; font-size:13px; letter-spacing:.06em; background:var(--gold); color:#4a2f00; padding:7px 13px; border-radius:999px; border:2px dashed rgba(74,47,0,.35);}
+      .demo-note{font-size:13px; color:var(--ink-soft); font-weight:700; margin:2px 2px 12px; line-height:1.45;}
+      .demo-note b{color:var(--ink);}
+
+      /* ---------- layout ---------- */
+      .layout{display:grid; grid-template-columns:1fr; gap:18px;}
+      @media (min-width:900px){ .layout{grid-template-columns:400px 1fr; align-items:start;} .stage-col{position:sticky; top:14px;} }
+
+      /* ---------- Pip stage ---------- */
+      .stage{background:var(--card); border:2px solid var(--line); border-radius:28px; box-shadow:var(--shadow); padding:14px 14px 10px; text-align:center; position:relative; overflow:hidden;}
+      .stage::before,.stage::after{content:""; position:absolute; border-radius:50%; opacity:.14; pointer-events:none;}
+      .stage::before{width:150px;height:150px;background:var(--mango); top:-60px; left:-40px;}
+      .stage::after{width:170px;height:170px;background:var(--taro); bottom:-80px; right:-50px;}
+      .bubble{position:relative; z-index:4; background:var(--card2); border:2.5px solid var(--ink); border-radius:18px; padding:10px 14px; font-family:"Baloo 2"; font-weight:700; font-size:19px; line-height:1.25; min-height:56px; display:flex; align-items:center; justify-content:center; margin:2px 6px 0;}
+      .bubble::after{content:""; position:absolute; left:50%; bottom:-11px; transform:translateX(-50%) rotate(45deg); width:18px; height:18px; background:var(--card2); border-right:2.5px solid var(--ink); border-bottom:2.5px solid var(--ink);}
+      .bubble.pop{animation:bubblePop .35s ease;}
+      @keyframes bubblePop{0%{transform:scale(.92)}55%{transform:scale(1.04)}100%{transform:scale(1)}}
+
+      .pip-stage{position:relative; height:424px; margin-top:8px; z-index:2; touch-action:pan-y; transition:height .35s ease;}
+      /* warm spotlight disc behind Pip so the pale glass cup pops off the card */
+      .pip-stage::before{content:""; position:absolute; left:50%; bottom:2px; width:350px; height:350px; transform:translateX(-50%); border-radius:50%; background:radial-gradient(circle, rgba(255,93,143,.22), rgba(255,159,46,.13) 55%, transparent 72%); z-index:0; pointer-events:none;}
+      .pip-floor{position:absolute; left:6%; right:6%; bottom:16px; height:26px; border-radius:50%; background:radial-gradient(ellipse at center, rgba(51,32,46,.20), transparent 68%);}
+      .pip-walker{position:absolute; left:50%; bottom:20px; width:300px; margin-left:-150px; will-change:transform; cursor:grab; z-index:2;}
+      .pip-walker:active{cursor:grabbing;}
+      .pip-sign{
+        /* held at Pip's side, mid-body — far below the speech bubble, so bounce/celebrate
+           hops (max −36px) can never push it up underneath the bubble */
+        position:absolute; top:248px; right:-24px; z-index:5; transform:rotate(7deg);
+        background:var(--gold); color:#4a2f00; border:2.5px solid var(--ink); border-radius:10px;
+        font-family:"Baloo 2"; font-weight:800; font-size:12.5px; letter-spacing:.04em; padding:4px 9px;
+        box-shadow:0 4px 10px rgba(0,0,0,.18); white-space:nowrap;
+      }
+      .pip-sign::after{content:""; position:absolute; left:14px; bottom:-15px; width:4px; height:15px; background:var(--ink); border-radius:2px;}
+      .pip-shadow{position:absolute; left:50%; bottom:12px; width:196px; height:20px; margin-left:-98px; background:radial-gradient(ellipse at center, rgba(51,32,46,.34), transparent 70%); border-radius:50%; transition:transform .3s;}
+      .pip-name{font-family:"Baloo 2"; font-weight:800; font-size:15px; color:var(--ink-soft); letter-spacing:.04em; padding:2px 0 2px;}
+      .pip-name b{color:var(--pink);}
+      .pip-hints{display:flex; gap:6px; justify-content:center; flex-wrap:wrap; padding:4px 2px 8px;}
+      .pip-hints span{font-size:11.5px; font-weight:800; color:var(--ink-soft); background:var(--chip); border:1.5px solid var(--line); border-radius:999px; padding:4px 10px;}
+
+      /* 3D body: layered shading, breathing, blinking, looking, foot tap */
+      .pip3d{filter:drop-shadow(0 16px 16px rgba(51,32,46,.30)); display:block; margin:0 auto; width:100%; height:auto; transition:width .35s ease;}
+      .breath{transform-origin:50% 92%; animation:breathe 3.2s ease-in-out infinite;}
+      @keyframes breathe{0%,100%{transform:scale(1,1)}50%{transform:scale(1.012,1.022)}}
+      .eyes-move{animation:lookAround 7s ease-in-out infinite;}
+      @keyframes lookAround{0%,18%,100%{transform:translateX(0)}26%,44%{transform:translateX(3.5px)}58%,76%{transform:translateX(-3.5px)}}
+      .lid{transform-box:fill-box; transform-origin:center; animation:blink 4.6s infinite;}
+      @keyframes blink{0%,91%,100%{transform:scaleY(0)}94%,97%{transform:scaleY(1)}}
+      .foot-l{transform-box:fill-box; transform-origin:50% 0%;}
+      .foot-r{transform-box:fill-box; transform-origin:50% 0%; animation:footTap 1.6s ease-in-out infinite;}
+      @keyframes footTap{0%,55%,100%{transform:rotate(0)}70%{transform:rotate(-16deg)}85%{transform:rotate(4deg)}}
+      .arm-r{transform-origin:186px 168px;}
+      .arm-wave{animation:armWave .32s ease-in-out infinite alternate;}
+      @keyframes armWave{from{transform:rotate(-6deg)}to{transform:rotate(-42deg)}}
+      #liquidGroup{transition:transform .9s cubic-bezier(.34,1.3,.5,1);}
+      #foamGroup{transition:transform .9s cubic-bezier(.34,1.3,.5,1), opacity .4s;}
+      #liquidRect{transition:fill .6s ease;}
+      #mixSwirl{transition:opacity .6s ease;}
+      #stripes{transition:opacity .5s ease;}
+      #toppingsLayer.swirl{animation:swirlSpin 0.55s linear 2; transform-origin:120px 245px;}
+      @keyframes swirlSpin{to{transform:rotate(360deg)}}
+
+      /* Pip dance / trick animations (on .pip-walker) */
+      .pip-walker.idle{animation:patrol 9s ease-in-out infinite;}
+      @keyframes patrol{0%,100%{transform:translateX(-28px)}50%{transform:translateX(28px)}}
+      .pip-walker.bounce{animation:pBounce .62s cubic-bezier(.34,1.56,.64,1) 2;}
+      @keyframes pBounce{0%,100%{transform:translateY(0) scale(1,1)}30%{transform:translateY(-28px) scale(.96,1.05)}55%{transform:translateY(0) scale(1.07,.91)}75%{transform:translateY(-13px) scale(.98,1.02)}}
+      .pip-walker.spin{animation:pSpin .8s cubic-bezier(.3,.7,.4,1) 1;}
+      @keyframes pSpin{0%{transform:rotate(0) translateY(0)}40%{transform:rotate(190deg) translateY(-18px)}100%{transform:rotate(360deg) translateY(0)}}
+      .pip-walker.backflip{animation:pFlip .85s cubic-bezier(.3,.7,.4,1) 1;}
+      @keyframes pFlip{0%{transform:translateY(0) rotate(0)}35%{transform:translateY(-64px) rotate(-180deg) scale(1.03)}70%{transform:translateY(-8px) rotate(-330deg)}100%{transform:translateY(0) rotate(-360deg)}}
+      .pip-walker.wiggle{animation:pWiggle .55s ease-in-out 3;}
+      @keyframes pWiggle{0%,100%{transform:rotate(0)}25%{transform:rotate(-7deg) translateY(-4px)}75%{transform:rotate(7deg) translateY(-4px)}}
+      .pip-walker.shiver{animation:pShiver .09s linear 16;}
+      @keyframes pShiver{0%{transform:translateX(-3px) rotate(-1.5deg)}50%{transform:translateX(3px) rotate(1.5deg)}100%{transform:translateX(-3px)}}
+      .pip-walker.dizzy{animation:pDizzy 1.1s ease-in-out 1;}
+      @keyframes pDizzy{0%,100%{transform:rotate(0)}20%{transform:rotate(-13deg)}45%{transform:rotate(11deg) translateY(-5px)}70%{transform:rotate(-8deg)}88%{transform:rotate(4deg)}}
+      .pip-walker.celebrate{animation:pCeleb .7s cubic-bezier(.34,1.56,.64,1) 4;}
+      @keyframes pCeleb{0%,100%{transform:translateY(0) rotate(0) scale(1)}30%{transform:translateY(-36px) rotate(-9deg) scale(1.04)}55%{transform:translateY(0) rotate(7deg) scale(1.07,.93)}80%{transform:translateY(-19px) rotate(-4deg)}}
+      .pip-walker.pearlbounce{animation:pPearl .5s ease 2;}
+      @keyframes pPearl{0%,100%{transform:translateY(0) scale(1)}35%{transform:translateY(3px) scale(1.09,.88)}65%{transform:translateY(-14px) scale(.97,1.04)}}
+      .pip-walker.shaking{animation:pShake .12s linear infinite;}
+      @keyframes pShake{0%{transform:translate(0,0) rotate(-3deg)}50%{transform:translate(5px,-4px) rotate(3deg)}100%{transform:translate(-5px,2px) rotate(-2deg)}}
+      .pip-walker.jumpout{animation:pJumpOut .95s cubic-bezier(.34,1.4,.5,1) 1; z-index:9;}
+      @keyframes pJumpOut{0%{transform:scale(1) translateY(0)}22%{transform:scale(.88,1.1) translateY(8px)}48%{transform:scale(1.85) translateY(-46px)}68%{transform:scale(2.05,.92) translateY(-30px)}86%{transform:scale(1.7) translateY(-8px)}100%{transform:scale(1) translateY(0)}}
+      .pip-walker.wave .arm-r{animation:armWave .3s ease-in-out 6 alternate;}
+
+      /* ---------- THE FLOSS (v2 — rebuilt to READ on camera) ----------
+         v1 failed its deciding audit: 0.55s passes of thin, ink-colored arms at
+         mini-Pip size read as idle in every captured frame. v2 fixes the causes:
+         · arms are THICK with big pink hands that trace the swing;
+         · the swing is WIDE (±56°) so hands cross the front of the cup and pop
+           out from behind its silhouette on the return pass;
+         · the cycle is SLOWER (0.8s × 4 ≈ 3.2s) with a plateau at each extreme;
+         · after the cycles, JS holds a frozen crossed-front pose (.floss-hold,
+           0.8s) so any frame series lands on an unmistakable floss pose.
+         Body: hips sway opposite the arms + a bob on every beat. Pink motion
+         swooshes flank the cup only while he flosses. */
+      .arm-l{transform-origin:58px 168px;}
+      .pip-walker.floss{animation:pFloss .8s ease-in-out 4;}
+      @keyframes pFloss{0%,100%{transform:translate(13px,0) rotate(4deg)}25%{transform:translate(0,-10px) rotate(0deg)}50%{transform:translate(-13px,0) rotate(-4deg)}75%{transform:translate(0,-10px) rotate(0deg)}}
+      .floss-arm-l{transform-origin:58px 168px; transform-box:view-box; opacity:0;}
+      .floss-arm-r{transform-origin:182px 168px; transform-box:view-box; opacity:0;}
+      .floss-swoosh{opacity:0;}
+      .pip-walker.floss .arm-l,.pip-walker.floss .arm-r{opacity:0;}
+      .pip-walker.floss .floss-arms-f .floss-arm-l,.pip-walker.floss .floss-arms-f .floss-arm-r{animation:flossFront .8s linear 4;}
+      .pip-walker.floss .floss-arms-b .floss-arm-l,.pip-walker.floss .floss-arms-b .floss-arm-r{animation:flossBack .8s linear 4;}
+      .pip-walker.floss .floss-swoosh{animation:swooshPulse .8s ease-in-out 4;}
+      @keyframes flossFront{0%{transform:rotate(-56deg); opacity:1}30%{transform:rotate(56deg); opacity:1}42%{transform:rotate(56deg); opacity:1}47%{transform:rotate(56deg); opacity:0}88%{transform:rotate(-56deg); opacity:0}96%{transform:rotate(-56deg); opacity:1}100%{transform:rotate(-56deg); opacity:1}}
+      @keyframes flossBack{0%{transform:rotate(-56deg); opacity:0}30%{transform:rotate(56deg); opacity:0}42%{transform:rotate(56deg); opacity:0}47%{transform:rotate(56deg); opacity:1}88%{transform:rotate(-56deg); opacity:1}96%{transform:rotate(-56deg); opacity:0}100%{transform:rotate(-56deg); opacity:0}}
+      @keyframes swooshPulse{0%,100%{opacity:.15}30%,70%{opacity:.9}}
+      /* frozen mid-floss pose held after the cycles — arms crossed in front */
+      .pip-walker.floss-hold{transform:rotate(-3deg) translateX(-6px);}
+      .pip-walker.floss-hold .arm-l,.pip-walker.floss-hold .arm-r{opacity:0;}
+      .pip-walker.floss-hold .floss-arms-f .floss-arm-l,.pip-walker.floss-hold .floss-arms-f .floss-arm-r{transform:rotate(-52deg); opacity:1;}
+      .pip-walker.floss-hold .floss-swoosh{opacity:.55;}
+
+      /* falling ingredients + bursts inside the stage */
+      .drop-layer{position:absolute; inset:0; overflow:visible; pointer-events:none; z-index:6;}
+      .drop-item{position:absolute; width:26px; height:26px; margin-left:-13px; border-radius:50%; box-shadow:inset -3px -4px 6px rgba(0,0,0,.22), 0 3px 6px rgba(0,0,0,.2);}
+      .drop-item.jelly,.drop-item.pudding{border-radius:8px;}
+      .drop-item.icecube{border-radius:7px; background:linear-gradient(135deg,#f2fbff,#a9d8f5); border:2px solid #d5efff;}
+      .heart-bit{position:absolute; width:20px; height:20px; pointer-events:none; z-index:7;}
+      .sugar-swirl{position:absolute; left:50%; top:64px; width:92px; height:92px; margin-left:-46px; border-radius:50%; pointer-events:none; z-index:5; opacity:0;
+        background:repeating-conic-gradient(from 0deg, rgba(255,255,255,.85) 0deg 14deg, rgba(255,214,120,.0) 14deg 30deg); mix-blend-mode:screen;}
+      .sugar-swirl.pour{animation:swirlPour 1.5s ease-out 1;}
+      @keyframes swirlPour{0%{opacity:0; transform:rotate(0) scale(.5)}25%{opacity:.95}100%{opacity:0; transform:rotate(560deg) scale(1.25)}}
+
+      /* ---------- roaming Pip (walks the page) ---------- */
+      #roamer{position:fixed; left:0; bottom:8px; width:104px; z-index:60; will-change:transform; cursor:pointer; -webkit-tap-highlight-color:transparent; visibility:visible; transition:bottom .55s cubic-bezier(.34,1.2,.5,1), opacity .4s ease, margin-bottom .45s ease, visibility 0s; filter:drop-shadow(0 8px 10px rgba(51,32,46,.35));}
+      /* hero guard: while ANY part of the hero stage is on screen the roamer is parked
+         fully below the viewport — invisible, non-interactive, and out of the tab
+         order / accessibility tree until he slides back in past the hero */
+      #roamer.parked{bottom:-280px; opacity:0; pointer-events:none; visibility:hidden; transition:bottom .55s cubic-bezier(.34,1.2,.5,1), opacity .4s ease, margin-bottom .45s ease, visibility 0s .5s;}
+      /* yield dip: when the patrol drifts over a tappable control Pip slides
+         below the edge and goes non-interactive until the coast is clear */
+      #roamer.yield{margin-bottom:-160px; pointer-events:none;}
+      #roamerInner{will-change:transform;}
+      #roamerInner.bob{animation:roamBob .38s ease-in-out infinite alternate;}
+      @keyframes roamBob{from{transform:translateY(0) rotate(-1.6deg)}to{transform:translateY(-5px) rotate(1.6deg)}}
+      #roamerInner.jumpout{animation:pJumpOut 1s cubic-bezier(.34,1.4,.5,1) 1;}
+      #roamerInner.hop{animation:roamHop .5s cubic-bezier(.34,1.56,.64,1) 1;}
+      @keyframes roamHop{0%,100%{transform:translateY(0)}45%{transform:translateY(-30px) rotate(-6deg)}}
+      .roam-flag{position:absolute; top:-24px; left:50%; transform:translateX(-50%) rotate(-4deg); background:var(--ink); color:#ffe9a8; font-family:"Baloo 2"; font-weight:800; font-size:10.5px; letter-spacing:.05em; padding:3px 8px; border-radius:7px; white-space:nowrap; box-shadow:0 3px 8px rgba(0,0,0,.25);}
+      .roam-bubble{position:absolute; bottom:calc(100% + 6px); left:50%; transform:translateX(-50%); width:172px; background:var(--card); color:var(--ink); border:2px solid var(--ink); border-radius:12px; font-family:"Baloo 2"; font-weight:700; font-size:12.5px; line-height:1.25; padding:6px 9px; text-align:center; box-shadow:var(--shadow); opacity:0; transition:opacity .3s; pointer-events:none;}
+      .roam-bubble.show{opacity:1;}
+      .roam-shadow{width:56px; height:9px; margin:0 auto; background:radial-gradient(ellipse at center, rgba(51,32,46,.32), transparent 70%); border-radius:50%;}
+      #roamer svg{width:100%; height:auto; display:block;}
+      /* near an edge the bubble pins to that side of Pip instead of centering — text never clips */
+      .roam-bubble.align-l{left:2px; transform:none;}
+      .roam-bubble.align-r{left:auto; right:2px; transform:none;}
+      @keyframes patrolS{0%,100%{transform:translateX(-14px)}50%{transform:translateX(14px)}}
+      @media (max-width:899px){
+        /* phones/tablets: the stage sticks while ordering, and once the menu panel
+           reaches the top zone the stage compacts (JS adds .mini) so Pip stays ON
+           SCREEN — filling up and flossing — while you pick size/ice/sweet/toppings */
+        .stage-col{position:sticky; top:8px; z-index:45;}
+        html{scroll-padding-top:214px;}
+        #orderPanel{scroll-margin-top:214px;}
+        .pip-walker{width:320px; margin-left:-160px;}
+        .pip-stage{height:436px;}
+        .pip-sign{top:262px;}
+        .stage.mini{padding:8px 10px 6px;}
+        .stage.mini .bubble{font-size:14.5px; min-height:40px; padding:6px 10px; margin:0 2px;}
+        /* MINI STAGE = SLIM COMPANION BAR (~205px total). The previous 331px mini
+           stage (196px Pip) painted over the top ~40% of the phone screen while
+           ordering: drink cards scrolling under it looked visible but every tap
+           landed on Pip's SVG instead of the card, so no drink ever registered
+           and Next stayed disabled — the standalone-export failure Jordan hit
+           (hosted audits click via the accessibility tree, bypassing hit-tests,
+           which is why they never caught it). The hero stage above stays huge;
+           only the ordering companion shrinks, so the menu owns the screen. */
+        .stage.mini .pip-stage{height:150px; margin-top:4px;}
+        .stage.mini .pip-stage::before{width:160px; height:160px;}
+        .stage.mini .pip-walker{width:118px; margin-left:-59px; bottom:6px;}
+        .stage.mini .pip-sign{display:none;}
+        .stage.mini .pip-name,.stage.mini .pip-hints{display:none;}
+        .stage.mini .pip-shadow{width:92px; margin-left:-46px; bottom:4px;}
+        .stage.mini .sugar-swirl{top:26px; width:48px; height:48px; margin-left:-24px;}
+      }
+      @media (max-width:560px){
+        /* roamer a touch bigger than before so he reads clearly on phones */
+        #roamer{width:78px; bottom:6px;}
+        .roam-bubble{width:148px; font-size:11.5px; padding:5px 8px;}
+        .roam-flag{font-size:9.5px; top:-20px; padding:2px 7px;}
+        .roam-shadow{width:56px;}
+        .pip-walker.idle{animation-name:patrolS;}
+        .pip-walker{width:288px; margin-left:-144px;}
+        .pip-stage{height:396px;}
+        .pip-sign{right:-8px; top:236px; font-size:11px; padding:3px 8px;}
+        .sugar-swirl{top:50px;}
+      }
+
+      /* ---------- step panel / menu ---------- */
+      .panel{background:var(--card); border:2px solid var(--line); border-radius:28px; box-shadow:var(--shadow); padding:20px 18px 18px; position:relative;}
+      .steps-dots{display:flex; gap:8px; align-items:center; margin-bottom:14px; flex-wrap:wrap;}
+      .dot{display:flex; align-items:center; gap:7px; font-weight:800; font-size:13px; color:var(--ink-soft);}
+      .dot .n{width:28px;height:28px;border-radius:50%; background:var(--chip); display:grid; place-items:center; font-family:"Baloo 2"; font-size:14px; border:2px solid var(--line);}
+      .dot.on{color:var(--pink);} .dot.on .n{background:var(--pink); color:#fff; border-color:var(--pink);}
+      .dot.done .n{background:var(--matcha); color:#fff; border-color:var(--matcha);}
+      .dot .lbl{display:none;} @media(min-width:560px){.dot .lbl{display:inline;}}
+      .step h2{margin:0 0 4px; font-size:26px; font-weight:800;}
+      .step .sub{margin:0 0 14px; color:var(--ink-soft); font-weight:700; font-size:14.5px;}
+      .menu-board-note{background:var(--tea-deep); color:#ffe9c9; border-radius:14px; padding:9px 13px; font-size:12.5px; font-weight:700; line-height:1.45; margin-bottom:14px;}
+      .menu-board-note b{color:#ffd98a; font-family:"Baloo 2";}
+
+      .cat-row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;}
+      .cat{border:2px solid var(--line); background:var(--card2); color:var(--ink-soft); border-radius:999px; padding:8px 15px; font-weight:800; font-size:14px; min-height:42px;}
+      .cat.active{background:var(--ink); color:#fff; border-color:var(--ink);}
+
+      .drink-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+      @media(max-width:420px){.drink-grid{gap:9px;}}
+      .drink{text-align:left; border:2.5px solid var(--line); background:var(--card2); border-radius:20px; padding:12px; min-height:128px; display:flex; flex-direction:column; gap:4px; position:relative; transition:transform .15s ease, border-color .15s ease, box-shadow .15s ease; color:var(--ink);}
+      .drink:active{transform:scale(.97);}
+      .drink.sel{border-color:var(--pink); box-shadow:0 8px 20px rgba(233,61,117,.28); background:var(--card);}
+      .drink .swatch{width:34px;height:44px;border-radius:9px 9px 13px 13px; position:relative; flex:none; border:2px solid rgba(51,32,46,.25); box-shadow:inset -6px 0 8px rgba(0,0,0,.14), inset 4px 0 6px rgba(255,255,255,.4);}
+      .drink .swatch::after{content:""; position:absolute; top:6px; left:50%; transform:translateX(-50%) rotate(14deg); width:6px; height:20px; background:#ff5d8f; border-radius:3px;}
+      .drink .nm{font-family:"Baloo 2"; font-weight:800; font-size:16.5px; line-height:1.12;}
+      .drink .desc{font-size:12px; font-weight:700; color:var(--ink-soft); line-height:1.3;}
+      .drink .meta{display:flex; gap:5px; flex-wrap:wrap; margin-top:2px;}
+      .drink .oz{font-size:10.5px; font-weight:800; letter-spacing:.04em; background:var(--chip); border:1.5px solid var(--line); color:var(--ink-soft); border-radius:999px; padding:2px 7px;}
+      .drink .bdg{font-size:10.5px; font-weight:800; letter-spacing:.04em; border-radius:999px; padding:2px 7px; font-family:"Baloo 2";}
+      .bdg-hot{background:#ffe3ae; color:#7a4a00; border:1.5px solid #f0cd7e;}
+      .bdg-ltd{background:#e7dcff; color:#5b34b8; border:1.5px solid #c9b3f5;}
+      .bdg-mad{background:#ffd9e5; color:#a11244; border:1.5px solid #f5a8c0;}
+      .drink .pr{margin-top:auto; font-weight:800; color:var(--pink); font-size:15px;}
+      .drink .ct{font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-soft);}
+      .drink .check{position:absolute; top:8px; right:8px; width:24px; height:24px; border-radius:50%; background:var(--pink); color:#fff; display:none; place-items:center; font-size:14px; font-weight:900; z-index:2;}
+      .drink.sel .check{display:grid;}
+
+      .opt-label{font-family:"Baloo 2"; font-weight:800; font-size:17px; margin:16px 0 8px;}
+      .opt-label:first-of-type{margin-top:2px;}
+      .opt-note{font-size:12.5px; color:var(--ink-soft); font-weight:700; margin:-4px 0 8px;}
+      .chips{display:flex; gap:9px; flex-wrap:wrap;}
+      .chip{border:2.5px solid var(--line); background:var(--card2); color:var(--ink); border-radius:16px; padding:11px 16px; font-weight:800; font-size:15px; min-height:50px; transition:transform .12s ease, border-color .12s ease;}
+      .chip:active{transform:scale(.95);}
+      .chip.sel{border-color:var(--pink); background:var(--chip); box-shadow:0 4px 12px rgba(233,61,117,.25);}
+      .chip .plus{color:var(--pink); font-size:13.5px;}
+      .top-chip{display:flex; align-items:center; gap:9px;}
+      .top-dot{width:20px; height:20px; flex:none; border-radius:50%; border:2px solid rgba(51,32,46,.2); box-shadow:inset -3px -3px 5px rgba(0,0,0,.18);}
+      .top-dot.sq{border-radius:6px;}
+
+      .nav-row{display:flex; gap:10px; margin-top:22px; flex-wrap:wrap;}
+      .btn{border:0; border-radius:16px; font-family:"Baloo 2"; font-weight:800; font-size:17px; padding:14px 20px; min-height:54px; transition:transform .12s ease, opacity .12s ease; position:relative; overflow:hidden;}
+      .btn:active{transform:scale(.97);}
+      .btn-primary{background:var(--pink); color:#fff; box-shadow:0 6px 18px rgba(233,61,117,.4); flex:1;}
+      .btn-primary:disabled{opacity:.4; box-shadow:none;}
+      .btn-ghost{background:var(--chip); color:var(--ink);}
+      .btn-green{background:var(--matcha); color:#fff; box-shadow:0 6px 18px rgba(88,179,104,.4); flex:1;}
+      .btn-shake{background:var(--taro); color:#fff; box-shadow:0 6px 18px rgba(154,110,232,.4); flex:1; user-select:none; -webkit-user-select:none; touch-action:none;}
+      .btn-shake .fillbar{position:absolute; left:0; top:0; bottom:0; width:0%; background:rgba(255,255,255,.35); pointer-events:none;}
+      .btn-shake.done{background:var(--matcha);}
+      .btn.pulse{animation:btnPulse 1s ease-in-out infinite;}
+      @keyframes btnPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.035)}}
+
+      .summary-bar{margin-top:16px; background:var(--card2); border:2px dashed var(--line); border-radius:16px; padding:11px 14px; display:flex; justify-content:space-between; align-items:center; gap:10px; font-weight:800; font-size:14.5px;}
+      .summary-bar .tot{font-family:"Baloo 2"; font-size:19px; color:var(--pink); white-space:nowrap;}
+
+      /* review */
+      .review-card{background:var(--card2); border:2px solid var(--line); border-radius:20px; padding:16px;}
+      .review-line{display:flex; justify-content:space-between; gap:12px; padding:6px 0; font-weight:700; font-size:15px; border-bottom:1.5px dashed var(--line);}
+      .review-line:last-of-type{border-bottom:0;}
+      .review-line .k{color:var(--ink-soft); flex:none;}
+      .review-line span:last-child{text-align:right;}
+      .review-total{display:flex; justify-content:space-between; font-family:"Baloo 2"; font-weight:800; font-size:21px; margin-top:10px;}
+      .review-total .v{color:var(--pink);}
+      .shake-zone{margin-top:16px; text-align:center;}
+      .shake-zone p{margin:8px 0 0; font-size:13px; font-weight:700; color:var(--ink-soft);}
+      .score-wrap{text-align:center; margin:16px 0 6px;}
+      .score-num{font-family:"Baloo 2"; font-weight:800; font-size:58px; line-height:1; color:var(--taro);}
+      .score-lbl{font-family:"Baloo 2"; font-weight:800; font-size:17px; margin-top:2px;}
+      .score-why{font-size:13.5px; color:var(--ink-soft); font-weight:700;}
+      .name-input{width:100%; border:2.5px solid var(--line); border-radius:16px; padding:14px 16px; font-size:17px; font-family:"Baloo 2"; font-weight:700; background:var(--card); color:var(--ink); margin-top:6px;}
+      .name-input:focus{outline:none; border-color:var(--pink);}
+      .fineprint{font-size:12.5px; color:var(--ink-soft); font-weight:700; text-align:center; margin-top:10px;}
+
+      /* ---------- tracking ---------- */
+      .track-head{display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap;}
+      .order-no{font-family:"Baloo 2"; font-weight:800; font-size:20px; color:var(--taro);}
+      .countdown{font-family:"Baloo 2"; font-weight:800; font-size:30px;}
+      .countdown small{display:block; font-size:12px; color:var(--ink-soft); letter-spacing:.05em; font-family:"Nunito"; font-weight:800; text-align:right;}
+      .track{position:relative; height:26px; background:var(--chip); border-radius:999px; margin:26px 0 8px; border:2px solid var(--line);}
+      .track-fill{position:absolute; inset:0 auto 0 0; width:0%; background:linear-gradient(90deg, var(--mango), var(--pink-soft)); border-radius:999px; transition:width .5s ease;}
+      #trackPip{position:absolute; top:50%; left:0%; width:44px; transform:translate(-50%,-88%); transition:left .5s ease; z-index:3; filter:drop-shadow(0 3px 4px rgba(0,0,0,.25));}
+      #trackPip .tp-bob{animation:roamBob .4s ease-in-out infinite alternate; transform-origin:50% 90%;}
+      #trackPip.jumpout .tp-bob{animation:pJumpOut 1s cubic-bezier(.34,1.4,.5,1) 1;}
+      .stages{display:flex; justify-content:space-between; gap:2px; margin-top:14px;}
+      .stage-item{flex:1; text-align:center; font-size:11.5px; font-weight:800; color:var(--ink-soft); padding:0 1px;}
+      .stage-item .ic{width:42px; height:42px; margin:0 auto 5px; border-radius:50%; background:var(--chip); border:2.5px solid var(--line); display:grid; place-items:center;}
+      .stage-item .ic svg{width:22px; height:22px;}
+      .stage-item.on{color:var(--pink);} .stage-item.on .ic{border-color:var(--pink); background:var(--card); animation:stagePulse 1s ease-in-out infinite;}
+      .stage-item.done{color:var(--matcha);} .stage-item.done .ic{border-color:var(--matcha); background:var(--matcha);}
+      .stage-item.done .ic svg *{stroke:#fff;}
+      @keyframes stagePulse{0%,100%{transform:scale(1)}50%{transform:scale(1.13)}}
+      .drink-recap{margin-top:16px; background:var(--card2); border:2px solid var(--line); border-radius:16px; padding:12px 15px; font-weight:700; font-size:14.5px;}
+      .drink-recap b{font-family:"Baloo 2";}
+      .ready-box{display:none; text-align:center; margin-top:18px; background:linear-gradient(160deg, #fff7dd, #ffe9f3); border:2.5px solid var(--gold); border-radius:20px; padding:20px 14px; position:relative; overflow:hidden;}
+      @media (prefers-color-scheme: dark){ .ready-box{background:linear-gradient(160deg,#4a3512,#47203a);} }
+      .ready-box.show{display:block;}
+      .ready-box h3{margin:0; font-size:30px; font-weight:800;}
+      .pickup-code{font-family:"Baloo 2"; font-weight:800; font-size:26px; letter-spacing:.14em; background:var(--ink); color:#ffe9a8; display:inline-block; padding:8px 22px; border-radius:14px; margin-top:8px;}
+      .confetto{position:absolute; top:-14px; border-radius:50%; pointer-events:none; animation:confFall linear forwards;}
+      @keyframes confFall{to{transform:translateY(340px) rotate(320deg); opacity:.15;}}
+
+      /* ---------- game ---------- */
+      .game-panel{margin-top:18px;}
+      .game-head{display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;}
+      .game-head h3{margin:0; font-size:22px; font-weight:800;}
+      .game-stats{display:flex; gap:8px; flex-wrap:wrap;}
+      .gstat{background:var(--chip); border:2px solid var(--line); border-radius:12px; padding:6px 12px; font-weight:800; font-size:14px;}
+      .gstat b{font-family:"Baloo 2"; color:var(--pink);}
+      #gameArea{position:relative; height:330px; margin-top:12px; border-radius:20px; overflow:hidden; touch-action:none; background:linear-gradient(180deg, #bdeaff 0%, #e8f9ff 55%, #fff3d6 100%); border:2.5px solid var(--line);}
+      @media (prefers-color-scheme: dark){ #gameArea{background:linear-gradient(180deg,#2b3a63 0%,#3a2b57 55%,#4a2f2a 100%);} }
+      #gameCup{position:absolute; bottom:6px; width:78px; height:92px; transform:translateX(-50%); z-index:5; pointer-events:none; filter:drop-shadow(0 5px 6px rgba(0,0,0,.25));}
+      .gi{position:absolute; width:30px; height:30px; transform:translate(-50%,-50%); z-index:3; pointer-events:none;}
+      .gi.pearl{border-radius:50%; background:radial-gradient(circle at 32% 30%, #6b4a35, #2e1a12 70%);}
+      .gi.gold{border-radius:50%; background:radial-gradient(circle at 32% 30%, #ffe98a, #f5a400 72%); box-shadow:0 0 12px rgba(245,169,0,.8); width:34px;height:34px;}
+      .gi.jelly{border-radius:8px; background:linear-gradient(135deg,#ff8fb8,#ff5d8f); box-shadow:inset 0 -5px 0 rgba(0,0,0,.12);}
+      .gi.pudding{border-radius:9px; background:linear-gradient(180deg,#ffe9a8,#ffc93e); box-shadow:inset 0 -6px 0 rgba(180,110,0,.25);}
+      .gi.ice{border-radius:7px; background:linear-gradient(135deg,#eaf7ff,#a9d8f5); transform:translate(-50%,-50%) rotate(24deg); border:2px solid #d5efff;}
+      .gi.lemon{border-radius:50%; background:radial-gradient(circle at 50% 50%, #fff6a8 0 34%, #ffd93e 36% 100%); border:2px solid #f0b90b;}
+      .score-pop{position:absolute; z-index:6; font-family:"Baloo 2"; font-weight:800; font-size:19px; pointer-events:none; animation:popUp .8s ease-out forwards; text-shadow:0 1px 0 #fff;}
+      @keyframes popUp{to{transform:translateY(-42px); opacity:0;}}
+      .game-overlay{position:absolute; inset:0; z-index:8; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:18px; background:rgba(255,250,244,.85);}
+      @media (prefers-color-scheme: dark){ .game-overlay{background:rgba(30,14,38,.87);} }
+      .game-overlay h4{margin:0 0 6px; font-family:"Baloo 2"; font-size:26px; font-weight:800;}
+      .game-overlay p{margin:0 0 14px; font-weight:700; color:var(--ink-soft); font-size:14.5px; max-width:340px;}
+      .game-legend{display:flex; gap:12px; flex-wrap:wrap; justify-content:center; margin-bottom:14px; font-size:12.5px; font-weight:800;}
+      .game-legend span{display:flex; align-items:center; gap:5px;}
+      .lg-dot{width:16px;height:16px;border-radius:50%; display:inline-block;}
+      .keys-hint{font-size:12.5px; color:var(--ink-soft); font-weight:700; margin-top:8px; text-align:center;}
+
+      /* ---------- pitch ---------- */
+      .pitch-hero{background:linear-gradient(140deg, var(--tea-deep), #5b2a4a); color:#ffeef5; border-radius:28px; padding:26px 22px; box-shadow:var(--shadow);}
+      .pitch-hero h2{margin:0 0 8px; font-size:31px; font-weight:800; line-height:1.12;}
+      .pitch-hero p{margin:0; font-size:16px; font-weight:600; color:#f3cfe0; max-width:640px;}
+      .pitch-grid{display:grid; grid-template-columns:1fr; gap:16px; margin-top:16px;}
+      @media(min-width:820px){.pitch-grid{grid-template-columns:1fr 1fr;}}
+      .pitch-card{background:var(--card); border:2px solid var(--line); border-radius:24px; padding:20px; box-shadow:var(--shadow);}
+      .pitch-card h3{margin:0 0 10px; font-size:21px; font-weight:800; display:flex; align-items:center; gap:9px;}
+      .pitch-card h3 .tag{width:34px;height:34px;border-radius:11px; display:grid; place-items:center; flex:none;}
+      .pitch-card h3 .tag svg{width:19px;height:19px;}
+      .pitch-card ul{margin:0; padding-left:20px; font-weight:600; font-size:15px; line-height:1.55;}
+      .pitch-card p{font-weight:600; font-size:15px; line-height:1.55; margin:0 0 8px;}
+      .pitch-card p:last-child{margin-bottom:0;}
+      .pitch-card.wide{grid-column:1/-1;}
+      .gate{background:#fff7e0; border-color:#f0d48a;}
+      @media (prefers-color-scheme: dark){ .gate{background:#3d2c10; border-color:#8a6d2f;} }
+      .pilot-steps{display:grid; gap:10px;}
+      @media(min-width:700px){.pilot-steps{grid-template-columns:repeat(4,1fr);}}
+      .pstep{background:var(--card2); border:2px solid var(--line); border-radius:16px; padding:13px;}
+      .pstep .pn{font-family:"Baloo 2"; font-weight:800; color:var(--pink); font-size:14px; letter-spacing:.05em;}
+      .pstep p{margin:4px 0 0; font-size:14px;}
+
+      /* ---------- pitch ---------- */
+      .why-now{border-color:#f0a8bf; background:linear-gradient(160deg, var(--card), var(--card2));}
+      .rating-row{display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin:2px 0 12px;}
+      .rating-num{font-family:"Baloo 2"; font-weight:800; font-size:52px; line-height:1; color:var(--pink);}
+      .rating-meta{font-weight:700; font-size:14.5px; line-height:1.45; color:var(--ink-soft); max-width:420px;}
+      .rating-meta b{color:var(--ink);}
+      .rating-stars{font-size:21px; letter-spacing:.14em; color:var(--gold); line-height:1; margin-bottom:4px;}
+      .src-note{font-size:12.5px; color:var(--ink-soft); font-weight:700; margin-top:10px; line-height:1.5;}
+      .why-cols{display:grid; gap:14px;}
+      @media(min-width:700px){.why-cols{grid-template-columns:1fr 1fr;}}
+      .why-cols h4{margin:0 0 6px; font-family:"Baloo 2"; font-size:16.5px; font-weight:800;}
+      .why-cols ul{margin:0; padding-left:20px; font-weight:600; font-size:14.5px; line-height:1.55;}
+
+      /* ---------- polish pass: motion, tracking life, phone type ---------- */
+      .step{animation:stepIn .38s cubic-bezier(.22,.9,.32,1) both;}
+      @keyframes stepIn{from{opacity:0; transform:translateY(12px)}to{opacity:1; transform:translateY(0)}}
+      .bubble.pop{animation:bubblePop .28s ease;}
+      .track-fill{
+        background:
+          repeating-linear-gradient(45deg, rgba(255,255,255,.28) 0 14px, rgba(255,255,255,0) 14px 28px),
+          linear-gradient(90deg, var(--mango), var(--pink-soft));
+        background-size:40px 100%, 100% 100%;
+        animation:trackFlow 1.1s linear infinite;
+        box-shadow:0 0 14px rgba(255,93,143,.45);
+      }
+      @keyframes trackFlow{to{background-position:40px 0, 0 0;}}
+      #trackPip{filter:drop-shadow(0 3px 4px rgba(0,0,0,.25)) drop-shadow(0 0 7px rgba(255,93,143,.45));}
+      .stage-item{transition:color .3s ease;}
+      .stage-item .ic{transition:border-color .3s ease, background .3s ease, transform .3s ease;}
+      .stage-item.pop .ic{animation:stagePop .55s cubic-bezier(.34,1.56,.64,1) 1;}
+      @keyframes stagePop{0%{transform:scale(.7)}55%{transform:scale(1.28)}100%{transform:scale(1)}}
+      #countNum.tick{display:inline-block; animation:countTick .3s ease;}
+      @keyframes countTick{0%{transform:scale(1.12)}100%{transform:scale(1)}}
+      @media (max-width:560px){
+        .wrap{padding:10px 12px 216px;}
+        .panel{padding:16px 13px 14px; border-radius:24px;}
+        .step h2{font-size:23px; line-height:1.15;}
+        .step .sub{font-size:13.5px; line-height:1.45; margin-bottom:12px;}
+        .opt-label{font-size:16px; margin:14px 0 7px;}
+        .drink .nm{font-size:15.5px;}
+        .drink{padding:10px; min-height:122px; border-radius:18px;}
+        .seg{width:100%;}
+        .seg button{flex:1; padding:10px 8px; font-size:13.5px;}
+        .demo-badge{margin-left:0;}
+        .pitch-hero{padding:20px 16px;}
+        .pitch-hero h2{font-size:26px;}
+        .pitch-card{padding:16px;}
+        .summary-bar{font-size:13.5px; padding:10px 12px;}
+        .score-num{font-size:50px;}
+      }
+      .hidden{display:none !important;}
+      .pip-face-part{display:none;}
+      #pipSvg[data-face="idle"] .f-idle, #pipSvg[data-face="happy"] .f-happy, #pipSvg[data-face="love"] .f-love,
+      #pipSvg[data-face="wow"] .f-wow, #pipSvg[data-face="dizzy"] .f-dizzy, #pipSvg[data-face="yum"] .f-yum{display:block;}
+      @media (prefers-reduced-motion: reduce){
+        *,*::before,*::after{animation-duration:.001s !important; animation-iteration-count:1 !important; transition-duration:.001s !important;}
+        #liquidGroup,#foamGroup{transition:none;}
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="topbar">
+        <div class="seg" role="tablist" aria-label="Views">
+          <button id="tabDemo" class="active" role="tab" aria-selected="true">Customer Demo</button>
+          <button id="tabPitch" role="tab" aria-selected="false">For Teapioca — Why This Wins</button>
+        </div>
+        <span class="demo-badge">CONCEPT DEMO</span>
+      </div>
+      <p class="demo-note" id="demoNote"><b>Concept demo.</b> Drink names &amp; categories mirror the current Teapioca Lounge menu structure — Cream BlasTea, Art of Tea, Smoothie, Slushie, Coffee &amp; Frappioca, Boba Madness and Limited Edition lines, with Teapioca-style sizes, ice &amp; sweetness levels and toppings. <b>Prices are sample/demo prices, not official pricing.</b> No real orders or payments are taken.</p>
+
+      <!-- ================= DEMO VIEW ================= -->
+      <div id="viewDemo">
+        <div class="layout">
+          <!-- Pip stage -->
+          <div class="stage-col">
+            <div class="stage" id="stageCard">
+              <div class="bubble" id="bubble">Hey! I'm Pip! Pick a drink and let's make some magic together!</div>
+              <div class="pip-stage" id="pipStage">
+                <div class="sugar-swirl" id="sugarSwirl"></div>
+                <div class="drop-layer" id="dropLayer"></div>
+                <div class="pip-walker idle" id="pipWalker" role="button" tabindex="0" aria-label="Pip the boba cup mascot — tap him for a trick, drag him to shake the drink">
+                  <div class="pip-sign" id="pipSign">STEP 1 · PICK A DRINK</div>
+                  <div class="breath">
+                  <svg class="pip3d" id="pipSvg" data-face="idle" width="300" height="375" viewBox="0 0 240 300" role="img" aria-label="Pip, a 3D-look cartoon boba cup with legs, arms and a pink straw">
+                    <defs>
+                      <linearGradient id="glassGrad" x1="0" y1="0" x2="1" y2="0">
+                        <stop offset="0" stop-color="#ffffff" stop-opacity=".55"/>
+                        <stop offset=".22" stop-color="#ffffff" stop-opacity=".10"/>
+                        <stop offset=".55" stop-color="#ffffff" stop-opacity=".02"/>
+                        <stop offset=".85" stop-color="#3a2340" stop-opacity=".10"/>
+                        <stop offset="1" stop-color="#3a2340" stop-opacity=".22"/>
+                      </linearGradient>
+                      <linearGradient id="strawGrad" x1="0" y1="0" x2="1" y2="0">
+                        <stop offset="0" stop-color="#ff8fb0"/><stop offset=".45" stop-color="#ff5d8f"/><stop offset="1" stop-color="#d12d63"/>
+                      </linearGradient>
+                      <linearGradient id="liquidGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0" stop-color="#ffffff" stop-opacity=".38"/><stop offset=".35" stop-color="#ffffff" stop-opacity="0"/><stop offset="1" stop-color="#000000" stop-opacity=".16"/>
+                      </linearGradient>
+                      <linearGradient id="lidGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0" stop-color="#5a3a66"/><stop offset=".5" stop-color="#33202e"/><stop offset="1" stop-color="#241423"/>
+                      </linearGradient>
+                      <radialGradient id="foamGrad" cx=".4" cy=".3" r=".9">
+                        <stop offset="0" stop-color="#fffdf6"/><stop offset=".7" stop-color="#fff3da"/><stop offset="1" stop-color="#ecd3a4"/>
+                      </radialGradient>
+                      <radialGradient id="cheekGrad" cx=".5" cy=".5" r=".5">
+                        <stop offset="0" stop-color="#ff9ebb" stop-opacity=".95"/><stop offset="1" stop-color="#ff9ebb" stop-opacity="0"/>
+                      </radialGradient>
+                      <clipPath id="cupClip"><path d="M57,74 L183,74 L169,256 Q167,270 153,270 L87,270 Q73,270 71,256 Z"/></clipPath>
+                    </defs>
+                    <!-- straw with 3D shading -->
+                    <g transform="rotate(13 158 40)">
+                      <rect x="147" y="0" width="23" height="88" rx="11" fill="url(#strawGrad)"/>
+                      <rect x="152" y="2" width="6" height="84" rx="3" fill="#ffc2d6" opacity=".8"/>
+                      <rect x="164" y="2" width="4" height="84" rx="2" fill="#a11644" opacity=".55"/>
+                    </g>
+                    <!-- legs + sneakers -->
+                    <g class="foot-l"><path d="M98,262 v14" stroke="#33202e" stroke-width="9" stroke-linecap="round"/><path d="M84,282 q0,-8 12,-8 l12,0 q8,0 8,6 q0,6 -8,6 l-16,0 q-8,0 -8,-4Z" fill="#7a4fd0"/><path d="M84,282 q0,-8 12,-8 l12,0 q8,0 8,6 l-32,2Z" fill="#9a6ee8"/><rect x="86" y="284" width="28" height="4" rx="2" fill="#fff"/></g>
+                    <g class="foot-r"><path d="M140,262 v14" stroke="#33202e" stroke-width="9" stroke-linecap="round"/><path d="M126,282 q0,-8 12,-8 l12,0 q8,0 8,6 q0,6 -8,6 l-16,0 q-8,0 -8,-4Z" fill="#7a4fd0"/><path d="M126,282 q0,-8 12,-8 l12,0 q8,0 8,6 l-32,2Z" fill="#9a6ee8"/><rect x="128" y="284" width="28" height="4" rx="2" fill="#fff"/></g>
+                    <!-- FLOSS arms — behind-the-cup pass: long thick arms whose big pink
+                         hands pop out past the cup silhouette at each swing extreme -->
+                    <g class="floss-arms-b" aria-hidden="true">
+                      <g class="floss-arm-l"><path d="M58,168 q-13,44 0,88" fill="none" stroke="#33202e" stroke-width="15" stroke-linecap="round"/><circle cx="58" cy="258" r="13" fill="#ff5d8f" stroke="#33202e" stroke-width="3"/></g>
+                      <g class="floss-arm-r"><path d="M182,168 q13,44 0,88" fill="none" stroke="#33202e" stroke-width="15" stroke-linecap="round"/><circle cx="182" cy="258" r="13" fill="#ff5d8f" stroke="#33202e" stroke-width="3"/></g>
+                    </g>
+                    <!-- cup contents -->
+                    <g clip-path="url(#cupClip)">
+                      <rect x="40" y="60" width="160" height="220" fill="#ffffff" opacity="0.10"/>
+                      <g id="liquidGroup">
+                        <rect id="liquidRect" x="40" y="66" width="160" height="212" fill="#e8dcc8"/>
+                        <rect x="40" y="66" width="160" height="212" fill="url(#liquidGrad)"/>
+                        <rect id="mixSwirl" x="40" y="66" width="160" height="212" fill="#ffffff" opacity="0"/>
+                        <ellipse cx="120" cy="68" rx="82" ry="9" fill="rgba(255,255,255,.4)"/>
+                        <g id="stripes" opacity="0" fill="none" stroke="#7a4416" stroke-width="9" stroke-linecap="round">
+                          <path d="M66,86 q14,42 4,84 q-8,34 6,66"/><path d="M104,80 q12,48 2,96 q-8,36 8,70"/><path d="M142,80 q12,48 2,96 q-8,36 8,70"/><path d="M176,88 q10,40 2,78 q-6,32 6,60"/>
+                        </g>
+                        <g id="iceCubes" opacity="0">
+                          <rect x="82" y="104" width="24" height="24" rx="6" fill="rgba(255,255,255,.78)" transform="rotate(14 94 116)"/>
+                          <rect x="128" y="122" width="22" height="22" rx="6" fill="rgba(255,255,255,.66)" transform="rotate(-12 139 133)"/>
+                          <rect x="104" y="152" width="20" height="20" rx="5" fill="rgba(255,255,255,.6)" transform="rotate(20 114 162)"/>
+                        </g>
+                      </g>
+                      <g id="toppingsLayer"></g>
+                      <g id="foamGroup" opacity="0">
+                        <path d="M58,74 q10,-17 26,-9 q6,-14 20,-11 q8,-12 18,-6 q12,-8 20,3 q14,-4 20,9 q13,0 14,14 q1,10 -12,10 L72,84 q-15,0 -14,-10 Z" fill="url(#foamGrad)" stroke="#e0c491" stroke-width="2.5"/>
+                        <ellipse cx="98" cy="60" rx="13" ry="6" fill="#ffffff" opacity=".75"/>
+                      </g>
+                      <!-- glass gloss + rim light -->
+                      <path d="M68,86 L80,250" stroke="#ffffff" stroke-width="11" stroke-linecap="round" opacity=".38"/>
+                      <path d="M172,90 L164,238" stroke="#ffffff" stroke-width="5" stroke-linecap="round" opacity=".16"/>
+                      <path d="M71,252 Q73,268 88,268 L152,268" fill="none" stroke="#000000" stroke-width="7" opacity=".14"/>
+                    </g>
+                    <!-- cup glass shell -->
+                    <path d="M57,74 L183,74 L169,256 Q167,270 153,270 L87,270 Q73,270 71,256 Z" fill="url(#glassGrad)" stroke="#33202e" stroke-width="5" stroke-linejoin="round"/>
+                    <rect x="49" y="59" width="142" height="18" rx="9" fill="url(#lidGrad)"/>
+                    <rect x="49" y="59" width="142" height="7" rx="3.5" fill="#7a5a86" opacity=".8"/>
+                    <!-- arms -->
+                    <g class="arm-l" id="armL"><path d="M58,168 q-24,4 -28,26" fill="none" stroke="#33202e" stroke-width="9" stroke-linecap="round"/></g>
+                    <g class="arm-r" id="armR"><path d="M182,168 q24,-2 32,-22" fill="none" stroke="#33202e" stroke-width="9" stroke-linecap="round"/></g>
+                    <!-- (front floss arms live at the very END of this SVG — drawn above
+                         the face and cup shell so the front pass can never be covered) -->
+                    <!-- cheeks -->
+                    <ellipse cx="84" cy="158" rx="15" ry="10" fill="url(#cheekGrad)"/>
+                    <ellipse cx="156" cy="158" rx="15" ry="10" fill="url(#cheekGrad)"/>
+                    <!-- FACES (pupils wander, lids blink) -->
+                    <g class="eyes-move">
+                      <g class="pip-face-part f-idle">
+                        <circle cx="97" cy="138" r="8.5" fill="#33202e"/><circle cx="100" cy="135" r="3" fill="#fff"/>
+                        <circle cx="143" cy="138" r="8.5" fill="#33202e"/><circle cx="146" cy="135" r="3" fill="#fff"/>
+                        <ellipse class="lid" cx="97" cy="138" rx="10" ry="10" fill="#f3ddc8"/><ellipse class="lid" cx="143" cy="138" rx="10" ry="10" fill="#f3ddc8"/>
+                        <path d="M108,160 q12,10 24,0" fill="none" stroke="#33202e" stroke-width="4.5" stroke-linecap="round"/>
+                      </g>
+                      <g class="pip-face-part f-happy">
+                        <path d="M86,140 q11,-13 22,0" fill="none" stroke="#33202e" stroke-width="5" stroke-linecap="round"/>
+                        <path d="M132,140 q11,-13 22,0" fill="none" stroke="#33202e" stroke-width="5" stroke-linecap="round"/>
+                        <path d="M104,156 q16,16 32,0 q-3,15 -16,15 q-13,0 -16,-15Z" fill="#33202e"/>
+                        <ellipse cx="120" cy="166" rx="7" ry="4.5" fill="#ff7d9c"/>
+                      </g>
+                      <g class="pip-face-part f-love">
+                        <path d="M97,148 c-11,-9 -15,-15 -15,-21 c0,-6 5,-9 9,-9 c3,0 5,2 6,4 c1,-2 3,-4 6,-4 c4,0 9,3 9,9 c0,6 -4,12 -15,21Z" fill="#ff3d75"/>
+                        <path d="M143,148 c-11,-9 -15,-15 -15,-21 c0,-6 5,-9 9,-9 c3,0 5,2 6,4 c1,-2 3,-4 6,-4 c4,0 9,3 9,9 c0,6 -4,12 -15,21Z" fill="#ff3d75"/>
+                        <path d="M104,158 q16,15 32,0 q-3,14 -16,14 q-13,0 -16,-14Z" fill="#33202e"/>
+                        <ellipse cx="120" cy="167" rx="7" ry="4.5" fill="#ff7d9c"/>
+                      </g>
+                      <g class="pip-face-part f-wow">
+                        <circle cx="97" cy="137" r="11" fill="#fff" stroke="#33202e" stroke-width="3.5"/><circle cx="97" cy="139" r="5" fill="#33202e"/>
+                        <circle cx="143" cy="137" r="11" fill="#fff" stroke="#33202e" stroke-width="3.5"/><circle cx="143" cy="139" r="5" fill="#33202e"/>
+                        <ellipse cx="120" cy="163" rx="8" ry="10.5" fill="#33202e"/>
+                      </g>
+                      <g class="pip-face-part f-dizzy">
+                        <path d="M89,130 l16,16 M105,130 l-16,16" stroke="#33202e" stroke-width="4.5" stroke-linecap="round"/>
+                        <path d="M135,130 l16,16 M151,130 l-16,16" stroke="#33202e" stroke-width="4.5" stroke-linecap="round"/>
+                        <path d="M104,164 q8,-7 16,0 q8,7 16,0" fill="none" stroke="#33202e" stroke-width="4.5" stroke-linecap="round"/>
+                      </g>
+                      <g class="pip-face-part f-yum">
+                        <circle cx="97" cy="138" r="8.5" fill="#33202e"/><circle cx="100" cy="135" r="3" fill="#fff"/>
+                        <circle cx="143" cy="138" r="8.5" fill="#33202e"/><circle cx="146" cy="135" r="3" fill="#fff"/>
+                        <ellipse class="lid" cx="97" cy="138" rx="10" ry="10" fill="#f3ddc8"/><ellipse class="lid" cx="143" cy="138" rx="10" ry="10" fill="#f3ddc8"/>
+                        <path d="M106,158 q14,11 28,0 l-3,13 q-11,6 -22,0 Z" fill="#33202e"/>
+                        <path d="M113,168 q7,5 14,0 l-2,8 q-5,3 -10,0 Z" fill="#ff7d9c"/>
+                      </g>
+                    </g>
+                    <!-- FLOSS motion swooshes — visible only while Pip flosses / holds the pose -->
+                    <g class="floss-swoosh" aria-hidden="true" fill="none" stroke="#ff5d8f" stroke-width="6" stroke-linecap="round">
+                      <path d="M34,182 q-16,34 -2,66"/>
+                      <path d="M206,182 q16,34 2,66"/>
+                    </g>
+                    <!-- FLOSS arms — front pass: drawn LAST (above face + shell) so the
+                         swing across the front of his hips is always fully visible -->
+                    <g class="floss-arms-f" aria-hidden="true">
+                      <g class="floss-arm-l"><path d="M58,168 q-13,44 0,88" fill="none" stroke="#33202e" stroke-width="15" stroke-linecap="round"/><circle cx="58" cy="258" r="13" fill="#ff5d8f" stroke="#33202e" stroke-width="3"/></g>
+                      <g class="floss-arm-r"><path d="M182,168 q13,44 0,88" fill="none" stroke="#33202e" stroke-width="15" stroke-linecap="round"/><circle cx="182" cy="258" r="13" fill="#ff5d8f" stroke="#33202e" stroke-width="3"/></g>
+                    </g>
+                  </svg>
+                  </div>
+                </div>
+                <div class="pip-floor"></div>
+                <div class="pip-shadow" id="pipShadow"></div>
+              </div>
+              <div class="pip-name">Meet <b>PIP</b> — your drink buddy. He lives in this page.</div>
+              <div class="pip-hints"><span>Tap Pip = a trick</span><span>Drag Pip = shake him</span><span>He walks the page ↓</span></div>
+            </div>
+          </div>
+
+          <!-- ordering panel -->
+          <div class="panel" id="orderPanel">
+            <div class="steps-dots" id="stepsDots">
+              <span class="dot on" data-dot="1"><span class="n">1</span><span class="lbl">Pick a drink</span></span>
+              <span class="dot" data-dot="2"><span class="n">2</span><span class="lbl">Size · Ice · Sweet</span></span>
+              <span class="dot" data-dot="3"><span class="n">3</span><span class="lbl">Toppings</span></span>
+              <span class="dot" data-dot="4"><span class="n">4</span><span class="lbl">Shake &amp; Review</span></span>
+            </div>
+
+            <!-- STEP 1 -->
+            <section class="step" id="step1">
+              <h2>Pick your drink</h2>
+              <p class="sub">Built like the real Teapioca board — BlasTeas, smoothies, slushies, Boba Madness &amp; more. Tap one and watch Pip fill up.</p>
+              <div class="menu-board-note"><b>ON THE BOARD:</b> Teapioca shakes its Cream BlasTeas fresh, serves most drinks in a 22 oz cup (plus the 12 oz Cub Cup), and lets you pick sweetness all the way to 125%. Demo prices shown.</div>
+              <div class="cat-row" id="catRow"></div>
+              <div class="drink-grid" id="drinkGrid"></div>
+              <div class="nav-row">
+                <button class="btn btn-primary" id="next1" disabled>Next: Make it yours →</button>
+              </div>
+            </section>
+
+            <!-- STEP 2 -->
+            <section class="step hidden" id="step2">
+              <h2>Size, ice &amp; sweetness</h2>
+              <p class="sub">Just like the counter: pick your cup, your ice, your sweet — Pip reacts to every single one.</p>
+              <div class="opt-label">Cup size</div>
+              <div class="chips" id="sizeChips">
+                <button class="chip" data-size="Cub">Cub Cup · 12 oz <span class="plus">−$1.00</span></button>
+                <button class="chip sel" data-size="Regular">Regular · 22 oz</button>
+                <button class="chip" data-size="Jumbo">Jumbo · 44 oz <span class="plus">+$2.00</span></button>
+              </div>
+              <div class="opt-label">Ice level</div>
+              <p class="opt-note">Watch the cubes clink into Pip, one by one.</p>
+              <div class="chips" id="iceChips">
+                <button class="chip" data-ice="0">No Ice</button>
+                <button class="chip" data-ice="30">Light Ice</button>
+                <button class="chip sel" data-ice="50">Regular Ice</button>
+                <button class="chip" data-ice="100">Extra Ice</button>
+              </div>
+              <div class="opt-label">Sweetness</div>
+              <p class="opt-note">Teapioca style — 0% up to 125%. Watch the sugar swirl pour in.</p>
+              <div class="chips" id="sweetChips">
+                <button class="chip" data-sweet="0">0%</button>
+                <button class="chip" data-sweet="30">30%</button>
+                <button class="chip sel" data-sweet="50">50%</button>
+                <button class="chip" data-sweet="70">70%</button>
+                <button class="chip" data-sweet="100">100%</button>
+                <button class="chip" data-sweet="125">125% · Extra Sweet</button>
+              </div>
+              <div class="nav-row">
+                <button class="btn btn-ghost" data-back="1">← Back</button>
+                <button class="btn btn-primary" id="next2">Next: Toppings →</button>
+              </div>
+            </section>
+
+            <!-- STEP 3 -->
+            <section class="step hidden" id="step3">
+              <h2>Load up the toppings</h2>
+              <p class="sub">Teapioca's topping wall — pearls, popping boba, jellies, pudding &amp; the famous milk foam cloud. Tap one and it drops right into Pip — and he does the FLOSS about it. Every single time.</p>
+              <div class="chips" id="topChips" style="flex-direction:column; align-items:stretch;"></div>
+              <div class="nav-row">
+                <button class="btn btn-ghost" data-back="2">← Back</button>
+                <button class="btn btn-primary" id="next3">Review my creation →</button>
+              </div>
+            </section>
+
+            <!-- STEP 4 -->
+            <section class="step hidden" id="step4">
+              <h2>Your masterpiece</h2>
+              <p class="sub">One last thing — Teapioca shakes every BlasTea. Shake yours like you mean it.</p>
+              <div class="review-card" id="reviewCard"></div>
+              <div class="shake-zone">
+                <button class="btn btn-shake" id="shakeBtn"><span class="fillbar" id="shakeFill"></span><span id="shakeLbl">Hold to SHAKE MY DRINK</span></button>
+                <p id="shakeHint">Press &amp; hold — Pip mixes the layers and seals in the flavor.</p>
+              </div>
+              <div class="score-wrap">
+                <div class="score-num" id="scoreNum">0</div>
+                <div class="score-lbl" id="scoreLbl">Mix Genius Score</div>
+                <div class="score-why" id="scoreWhy"></div>
+              </div>
+              <label class="opt-label" for="drinkName" style="margin-top:10px;">Name your drink</label>
+              <input class="name-input" id="drinkName" maxlength="30" placeholder="e.g. The Taro Tornado" />
+              <div class="nav-row">
+                <button class="btn btn-ghost" data-back="3">← Back</button>
+                <button class="btn btn-green" id="placeOrder">Place Order · Demo</button>
+              </div>
+              <p class="fineprint">Demo checkout — no payment is taken and no real order is sent to a store.</p>
+            </section>
+
+            <div class="summary-bar" id="summaryBar">
+              <span id="summaryText">No drink picked yet — Pip is thirsty!</span>
+              <span class="tot" id="summaryTotal">$0.00</span>
+            </div>
+          </div>
+
+          <!-- tracking panel -->
+          <div class="panel hidden" id="trackPanel">
+            <div class="track-head">
+              <div>
+                <div class="order-no" id="orderNo">Order #TP-0000</div>
+                <div style="font-weight:800; color:var(--ink-soft); font-size:14px;" id="trackDrinkName">Your drink is in the works</div>
+              </div>
+              <div class="countdown"><span id="countNum">1:30</span><small>EST. WAIT · DEMO SPEED</small></div>
+            </div>
+            <div class="track">
+              <div class="track-fill" id="trackFill"></div>
+              <div id="trackPip" aria-hidden="true"><div class="tp-bob">
+                <svg viewBox="0 0 100 118" width="44" height="52"><g transform="rotate(13 66 16)"><rect x="58" y="0" width="15" height="46" rx="7" fill="#ff5d8f"/></g><path d="M18,34 L82,34 L74,104 Q73,112 64,112 L36,112 Q27,112 26,104 Z" fill="#fff" stroke="#33202e" stroke-width="4.5" stroke-linejoin="round"/><path d="M24,58 L76,58 L74,104 Q73,112 64,112 L36,112 Q27,112 26,104 Z" fill="#ffb3cd"/><circle cx="33" cy="100" r="6.5" fill="#2e1a12"/><circle cx="50" cy="104" r="6.5" fill="#2e1a12"/><circle cx="66" cy="100" r="6.5" fill="#2e1a12"/><rect x="13" y="26" width="74" height="11" rx="5.5" fill="#33202e"/><circle cx="40" cy="80" r="5" fill="#33202e"/><circle cx="61" cy="80" r="5" fill="#33202e"/><path d="M44,90 q6.5,5 13,0" fill="none" stroke="#33202e" stroke-width="3.5" stroke-linecap="round"/></svg>
+              </div></div>
+            </div>
+            <div class="stages" id="stagesRow"></div>
+            <div class="drink-recap" id="drinkRecap"></div>
+            <div class="ready-box" id="readyBox">
+              <h3>Your drink is READY!</h3>
+              <p style="margin:6px 0 2px; font-weight:700;">Show this pickup code at the counter:</p>
+              <div class="pickup-code" id="pickupCode">BOBA-0000</div>
+              <p style="margin:10px 0 0; font-weight:800; color:var(--pink);" id="genieReward"></p>
+            </div>
+
+            <!-- GAME -->
+            <div class="game-panel" id="gamePanel">
+              <div class="game-head">
+                <h3>Boba Catch — play while you wait</h3>
+                <div class="game-stats">
+                  <span class="gstat">Score <b id="gScore">0</b></span>
+                  <span class="gstat">Combo <b id="gCombo">×1</b></span>
+                  <span class="gstat">Genie Points <b id="gPoints">0</b></span>
+                </div>
+              </div>
+              <div id="gameArea">
+                <div id="gameCup">
+                  <svg viewBox="0 0 100 118" width="78" height="92" aria-hidden="true">
+                    <g transform="rotate(13 66 16)"><rect x="58" y="0" width="15" height="46" rx="7" fill="#ff5d8f"/></g>
+                    <path d="M18,34 L82,34 L74,104 Q73,112 64,112 L36,112 Q27,112 26,104 Z" fill="#fff" stroke="#33202e" stroke-width="4.5" stroke-linejoin="round"/>
+                    <path d="M24,58 L76,58 L74,104 Q73,112 64,112 L36,112 Q27,112 26,104 Z" fill="#ffb3cd"/>
+                    <circle cx="33" cy="100" r="6.5" fill="#2e1a12"/><circle cx="50" cy="104" r="6.5" fill="#2e1a12"/><circle cx="66" cy="100" r="6.5" fill="#2e1a12"/>
+                    <rect x="13" y="26" width="74" height="11" rx="5.5" fill="#33202e"/>
+                    <circle cx="40" cy="80" r="5" fill="#33202e"/><circle cx="61" cy="80" r="5" fill="#33202e"/>
+                    <path d="M44,90 q6.5,5 13,0" fill="none" stroke="#33202e" stroke-width="3.5" stroke-linecap="round"/>
+                    <ellipse cx="31" cy="88" rx="5.5" ry="3.5" fill="#ff9ebb"/><ellipse cx="70" cy="88" rx="5.5" ry="3.5" fill="#ff9ebb"/>
+                  </svg>
+                </div>
+                <div class="game-overlay" id="gameOverlay">
+                  <h4 id="goTitle">Catch the falling boba!</h4>
+                  <p id="goText">Slide the cup left and right to catch pearls and toppings. Golden pearls are bonus gold. Dodge the ice cubes and sour lemons — they break your combo!</p>
+                  <div class="game-legend">
+                    <span><i class="lg-dot" style="background:#2e1a12"></i>Pearl +10</span>
+                    <span><i class="lg-dot" style="background:#f5a400"></i>Golden +30</span>
+                    <span><i class="lg-dot" style="background:#ff5d8f; border-radius:4px;"></i>Jelly +15</span>
+                    <span><i class="lg-dot" style="background:#a9d8f5; border-radius:4px;"></i>Ice −10</span>
+                    <span><i class="lg-dot" style="background:#ffd93e"></i>Lemon −15</span>
+                  </div>
+                  <button class="btn btn-primary" id="gameStart" style="flex:none; padding:14px 30px;">Start catching</button>
+                </div>
+              </div>
+              <p class="keys-hint">Move with your finger or mouse — or use the ← → arrow keys. Hit 150+ and Pip jumps clean out of the screen. Your score turns into Genie Points when your drink is ready.</p>
+            </div>
+
+            <div class="nav-row">
+              <button class="btn btn-ghost" id="newDrinkBtn">← Mix another drink</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= PITCH VIEW ================= -->
+      <div id="viewPitch" class="hidden">
+        <div class="pitch-hero">
+          <h2>Ordering a drink should feel like playing with one.</h2>
+          <p>A mascot-led ordering experience for Teapioca: Pip the cup walks the page, fills with color, shivers, shakes and celebrates while customers build a drink from the real menu board — then walks their order down the track and keeps them playing while they wait.</p>
+        </div>
+        <div class="pitch-grid">
+          <div class="pitch-card wide why-now">
+            <h3><span class="tag" style="background:#ffe0ea;"><svg viewBox="0 0 24 24" fill="none" stroke="#e83e77" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg></span>Why now — the window is open</h3>
+            <div class="rating-row">
+              <div class="rating-num">2.8<span style="font-size:24px; color:var(--ink-soft);"> / 5</span></div>
+              <div class="rating-meta">
+                <div class="rating-stars" aria-hidden="true">★★★☆☆</div>
+                <b>The official Teapioca Lounge Android app's current average rating</b> — across 94 reviews on its public Google Play listing, last updated November 7, 2026 with "Minor improvements" as the only listed change.
+              </div>
+            </div>
+            <div class="why-cols">
+              <div>
+                <h4>What customers are reporting</h4>
+                <ul>
+                  <li>The app <b>crashing</b> — customers describe it crashing when they try to use it.</li>
+                  <li><b>"No stores available"</b> errors that block ordering before it starts.</li>
+                  <li><b>Repeat orders failing</b> to go through for returning customers.</li>
+                  <li>General <b>glitchiness</b> through the ordering flow.</li>
+                </ul>
+              </div>
+              <div>
+                <h4>How this concept sidesteps all of it</h4>
+                <ul>
+                  <li><b>No download:</b> it runs in the phone's browser from a QR code at the counter — nothing to install from an app store.</li>
+                  <li><b>No app-store update:</b> when something needs fixing, the page itself updates — customers never wait on a store release.</li>
+                  <li><b>No store-locator failure mode:</b> the pilot QR sits in one store, so ordering starts already knowing which store it's for.</li>
+                  <li><b>Works on the Android phones customers already carry</b> — the pilot needs no new device and no Play Store listing.</li>
+                </ul>
+              </div>
+            </div>
+            <p class="src-note">Source: the app's public Google Play listing and its public reviews, checked November 10, 2026. Ratings and review counts change over time. The ask below is unchanged: one store, a short pilot, no POS change.</p>
+          </div>
+          <div class="pitch-card">
+            <h3><span class="tag" style="background:#ffe0ea;"><svg viewBox="0 0 24 24" fill="none" stroke="#e83e77" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></span>The problem</h3>
+            <ul>
+              <li><b>Ordering is a chore.</b> A wall of menu text, modifiers, and percentages — customers default to "the usual" instead of exploring the board.</li>
+              <li><b>Waiting is dead time.</b> Five to ten minutes of standing around is where lines feel longest and phones come out — pointed at anything but the brand.</li>
+              <li><b>Toppings are invisible profit.</b> Add-ons live in a plain list, so most customers never play with them.</li>
+            </ul>
+          </div>
+          <div class="pitch-card">
+            <h3><span class="tag" style="background:#e3f5e6;"><svg viewBox="0 0 24 24" fill="none" stroke="#3d9950" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9Z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8Z"/></svg></span>The fix: Pip</h3>
+            <ul>
+              <li><b>A cup that lives in the page.</b> Pip is a shaded, 3D-look character who strolls the screen, hops onto the menu, carries your step sign, and jumps toward you when something great happens.</li>
+              <li><b>Every choice is physical.</b> Toppings drop in, ice clinks cube by cube, sweetness pours as a swirl — and you shake the finished drink yourself, just like the counter shakes a BlasTea.</li>
+              <li><b>The wait becomes play.</b> Pip walks the tracking bar stage by stage, and Boba Catch runs alongside — dead minutes turn into brand time.</li>
+            </ul>
+          </div>
+          <div class="pitch-card">
+            <h3><span class="tag" style="background:#fff0d6;"><svg viewBox="0 0 24 24" fill="none" stroke="#d98a00" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V9M10 19V5M16 19v-8M22 19H2"/></svg></span>Why it wins for Teapioca</h3>
+            <ul>
+              <li><b>True to the real menu:</b> the demo is structured on today's board — Cream BlasTea, Art of Tea, Boba Madness, Cub Cup to Jumbo, sweetness to 125% — so staff and customers recognize it instantly.</li>
+              <li><b>Bigger baskets:</b> toppings become a playful upsell — Pip begs for "just one more," and customers happily add the extras.</li>
+              <li><b>Repeat visits:</b> kids and families ask for "the cup store." A character who walks your phone is a reason to come back a menu board can't match.</li>
+              <li><b>Loyalty built in:</b> Genie Points earned in the wait game give regulars a reason to return and redeem.</li>
+              <li><b>Shorter-feeling waits:</b> a customer playing Boba Catch isn't watching the clock — perceived wait drops even when real wait doesn't.</li>
+            </ul>
+          </div>
+          <div class="pitch-card">
+            <h3><span class="tag" style="background:#e9e1ff;"><svg viewBox="0 0 24 24" fill="none" stroke="#7a4fd0" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>The pilot proposal</h3>
+            <div class="pilot-steps">
+              <div class="pstep"><span class="pn">STEP 1</span><p>One store, one QR code at the counter and on cups. Mobile web — no app download, no POS change for the pilot.</p></div>
+              <div class="pstep"><span class="pn">STEP 2</span><p>Run 4–6 weeks. Pip takes demo-style orders that hand off to the existing counter flow.</p></div>
+              <div class="pstep"><span class="pn">STEP 3</span><p>Measure what matters: average ticket size, toppings per drink, repeat visits, game plays per order.</p></div>
+              <div class="pstep"><span class="pn">STEP 4</span><p>If the numbers move, expand: official menu, POS and payment integration, more stores, seasonal Pip outfits.</p></div>
+            </div>
+          </div>
+          <div class="pitch-card wide gate">
+            <h3><span class="tag" style="background:#ffe9a8;"><svg viewBox="0 0 24 24" fill="none" stroke="#9c7200" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l10 18H2Z"/><path d="M12 10v4M12 17.5v.5"/></svg></span>Honest gates before real orders</h3>
+            <p>This demo is a concept. Drink names and categories mirror the current public Teapioca Lounge menu structure; <b>prices are illustrative demo prices</b>, and the demo takes <b>no real orders and no payments</b>. Before anything goes live, it needs:</p>
+            <ul>
+              <li>Written brand authorization from Teapioca for the name, menu, and character use</li>
+              <li>The official menu and pricing export, plus store-specific availability</li>
+              <li>POS and payment integration through approved, PCI-compliant providers</li>
+              <li>Final review of taxes, refunds, and pickup workflow with the store team</li>
+            </ul>
+            <p style="margin-top:8px;">Those gates are a feature of the pitch, not a footnote — the demo proves the experience first, then earns the integration.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ ROAMING PIP — walks the whole page ============ -->
+    <div id="roamer" class="parked" role="button" tabindex="-1" aria-hidden="true" aria-label="Pip walking the page — tap him and he jumps toward you">
+      <div class="roam-bubble" id="roamBubble">That's me — Pip! Tap me!</div>
+      <div class="roam-flag" id="roamFlag">STEP 1 · PICK</div>
+      <div id="roamerInner" class="bob">
+        <svg viewBox="0 0 240 300" width="86" height="108" aria-hidden="true">
+          <g transform="rotate(13 158 40)"><rect x="147" y="0" width="23" height="88" rx="11" fill="#ff5d8f"/><rect x="152" y="2" width="6" height="84" rx="3" fill="#ffc2d6"/></g>
+          <path d="M98,262 v14" stroke="#33202e" stroke-width="10" stroke-linecap="round"/><path d="M84,282 q0,-8 12,-8 l12,0 q8,0 8,6 q0,6 -8,6 l-16,0 q-8,0 -8,-4Z" fill="#7a4fd0"/>
+          <path d="M140,262 v14" stroke="#33202e" stroke-width="10" stroke-linecap="round"/><path d="M126,282 q0,-8 12,-8 l12,0 q8,0 8,6 q0,6 -8,6 l-16,0 q-8,0 -8,-4Z" fill="#7a4fd0"/>
+          <path d="M57,74 L183,74 L169,256 Q167,270 153,270 L87,270 Q73,270 71,256 Z" fill="#ffd9e5" stroke="#33202e" stroke-width="6" stroke-linejoin="round"/>
+          <path d="M57,120 L183,120 L169,256 Q167,270 153,270 L87,270 Q73,270 71,256 Z" fill="#ff8fb0" opacity=".65"/>
+          <path d="M68,86 L80,240" stroke="#ffffff" stroke-width="11" stroke-linecap="round" opacity=".45"/>
+          <rect x="49" y="59" width="142" height="18" rx="9" fill="#33202e"/>
+          <path d="M58,168 q-24,4 -28,26" fill="none" stroke="#33202e" stroke-width="10" stroke-linecap="round"/>
+          <path d="M182,168 q24,-2 32,-22" fill="none" stroke="#33202e" stroke-width="10" stroke-linecap="round"/>
+          <circle cx="97" cy="150" r="9" fill="#33202e"/><circle cx="143" cy="150" r="9" fill="#33202e"/>
+          <circle cx="100" cy="147" r="3.2" fill="#fff"/><circle cx="146" cy="147" r="3.2" fill="#fff"/>
+          <path d="M108,172 q12,10 24,0" fill="none" stroke="#33202e" stroke-width="5" stroke-linecap="round"/>
+          <ellipse cx="82" cy="170" rx="12" ry="7" fill="#ff9ebb" opacity=".8"/><ellipse cx="158" cy="170" rx="12" ry="7" fill="#ff9ebb" opacity=".8"/>
+          <circle cx="88" cy="238" r="9" fill="#2e1a12"/><circle cx="120" cy="246" r="9" fill="#2e1a12"/><circle cx="152" cy="238" r="9" fill="#2e1a12"/>
+        </svg>
+      </div>
+      <div class="roam-shadow"></div>
+    </div>
+
+    <script>
+    /* ==================== DATA — mirrors the current Teapioca Lounge menu structure ====================
+       Categories & drink names as listed on today's public Teapioca menus (Cream BlasTea, Art of Tea,
+       Smoothie, Slushie, Coffee & Frappioca, Lemonade & Juice, Boba Madness, Limited Edition).
+       Prices below are DEMO prices for the pitch, not official store pricing. */
+    var CATS = ['All','Cream BlasTea','Art of Tea','Smoothie','Slushie','Coffee & Frappioca','Lemonade & Juice','Boba Madness','Limited Edition'];
+    var DRINKS = [
+      {id:'cream-black', name:'Cream Black BlasTea', sub:'Original Milk Tea', cat:'Cream BlasTea', price:5.59, color:'#d9b98a', stripes:false, badge:'MOST ORDERED', bcls:'bdg-hot', desc:'Traditional iced milk tea, shaken fresh.', line:'The OG BlasTea! Creamy, cozy, perfect.'},
+      {id:'cream-green', name:'Cream Green BlasTea', sub:'Green Milk Tea', cat:'Cream BlasTea', price:5.59, color:'#a9c98a', stripes:false, desc:'Jasmine green milk tea, light and smooth.', line:'Green milk tea! Light, floral, lovely!'},
+      {id:'taro-blast', name:'Taro Cream Blast', sub:'', cat:'Cream BlasTea', price:6.15, color:'#b18fe8', stripes:false, badge:'MOST ORDERED', bcls:'bdg-hot', desc:'Creamy iced taro, shaken — caffeine free.', line:'Taro purple! My favorite color — obviously.'},
+      {id:'honeydew-blast', name:'Honeydew Cream Blast', sub:'', cat:'Cream BlasTea', price:6.15, color:'#a4dc9e', stripes:false, desc:'Sweet honeydew cream, shaken over ice.', line:'Honeydew! Melon-y and mellow!'},
+      {id:'panda', name:'Panda Cream BlasTea', sub:'Brown Sugar', cat:'Cream BlasTea', price:6.59, color:'#cf9040', stripes:true, desc:'Brown sugar black milk tea, shaken, with tiger stripes.', line:'Panda stripes! ROAR. That one is fancy.'},
+      {id:'thai', name:'Cream Thai BlasTea', sub:'', cat:'Cream BlasTea', price:6.05, color:'#f08a3c', stripes:false, desc:'Bold Thai tea with a creamy finish.', line:'Thai tea! Bold, sweet, sunset in a cup.'},
+      {id:'matcha-cream', name:'Cream Matcha Tea', sub:'', cat:'Cream BlasTea', price:6.55, color:'#7cc46a', stripes:false, desc:'Stone-ground matcha shaken with cream.', line:'Matcha cream! Smooth, green, zen mode.'},
+      {id:'jasmine', name:'Jasmine Green BlasTea', sub:'', cat:'Art of Tea', price:5.29, color:'#cfd98a', stripes:false, badge:'MOST ORDERED', bcls:'bdg-hot', desc:'Iced jasmine green tea, shaken — add a flavor if you like.', line:'Jasmine green! Fresh and breezy!'},
+      {id:'black-blastea', name:'Black BlasTea', sub:'', cat:'Art of Tea', price:5.29, color:'#b57e4e', stripes:false, desc:'Classic iced black tea, brisk and clean.', line:'Black tea, straight up. A purist legend!'},
+      {id:'fresh-fruit', name:'Fresh Fruit Tea', sub:'', cat:'Art of Tea', price:5.99, color:'#ffa62b', stripes:false, desc:'Citrusy fruit blend topped with green tea & fresh fruit.', line:'Fresh fruit tea! A farmers market in a cup!'},
+      {id:'mango-smoothie', name:'Mango Smoothie', sub:'', cat:'Smoothie', price:6.89, color:'#ffa62b', stripes:false, badge:'MOST ORDERED', bcls:'bdg-hot', desc:'Creamy smoothie made with real mango.', line:'Mango sunshine! I can feel the vitamins. Probably.'},
+      {id:'strawb-banana', name:'Strawberry Banana Smoothie', sub:'', cat:'Smoothie', price:6.95, color:'#ff9eb8', stripes:false, desc:'Strawberry and banana, blended thick.', line:'Strawberry banana! The dream team!'},
+      {id:'taro-smoothie', name:'Taro Smoothie', sub:'', cat:'Smoothie', price:6.69, color:'#c3a6f0', stripes:false, desc:'Taro blended silky-smooth and creamy.', line:'Taro smoothie! Tastes like cookies-and-cream magic!'},
+      {id:'watermelon-slush', name:'Watermelon Slushie', sub:'', cat:'Slushie', price:6.25, color:'#ff6b7a', stripes:false, desc:'Fresh watermelon, ice-blended.', line:'Watermelon slush! Summer just walked in!'},
+      {id:'strawberry-slush', name:'Strawberry Slushie', sub:'', cat:'Slushie', price:6.25, color:'#ff7ba9', stripes:false, desc:'Strawberry ice-blended slush.', line:'Strawberry pink! We are basically twins now.'},
+      {id:'viet-coffee', name:'Vietnamese Coffee', sub:'Ca Phe Sua Da', cat:'Coffee & Frappioca', price:6.25, color:'#8a5a33', stripes:false, desc:'Bold Vietnamese iced coffee with sweet cream.', line:'Coffee?! Somebody means BUSINESS today.'},
+      {id:'bac-xiu', name:'Cafe Bac Xiu Frappioca', sub:'', cat:'Coffee & Frappioca', price:6.59, color:'#a67c52', stripes:false, desc:'Ice-blended Bac Xiu coffee — milky and mellow.', line:'Bac Xiu Frappioca! Smooth operator energy!'},
+      {id:'butterfly-lemonade', name:'Butterfly Lemonade', sub:'', cat:'Lemonade & Juice', price:5.95, color:'#8a7ae8', stripes:false, desc:'Butterfly pea lemonade — watch it change color.', line:'Butterfly lemonade! It CHANGES COLOR. Science is delicious!'},
+      {id:'lemonade-blast', name:'Lemonade Blast', sub:'', cat:'Lemonade & Juice', price:5.95, color:'#ffd93e', stripes:false, desc:'Fresh-squeezed lemonade with a blast of flavor.', line:'Lemonade Blast! Pucker power, activated!'},
+      {id:'original-madness', name:'Original Boba Madness', sub:'', cat:'Boba Madness', price:7.59, color:'#dcbd8f', stripes:false, badge:'LOADED', bcls:'bdg-mad', desc:'Comes with a portion of EVERY standard add-on. Go big.', line:'BOBA MADNESS! Every topping at once?! You beautiful maniac!'},
+      {id:'taro-madness', name:'Taro Coconut Boba Madness', sub:'', cat:'Boba Madness', price:7.59, color:'#b18fe8', stripes:false, badge:'LOADED', bcls:'bdg-mad', desc:'Creamy taro + coconut with the full topping lineup.', line:'Taro Coconut Madness! A topping PARADE!'},
+      {id:'ruby', name:'Ruby Refresher', sub:'Mulberry · Oolong', cat:'Limited Edition', price:5.49, color:'#d94f70', stripes:false, badge:'LIMITED', bcls:'bdg-ltd', desc:'Mulberry & premium oolong with a hibiscus topper — bright and tart.', line:'Ruby Refresher! The new gem on the board!'},
+      {id:'amethyst', name:'Amethyst Refresher', sub:'Mulberry · Oolong', cat:'Limited Edition', price:5.49, color:'#9a6ee8', stripes:false, badge:'LIMITED', bcls:'bdg-ltd', desc:'Mulberry & premium oolong — smooth and floral.', line:'Amethyst! Smooth, floral, fancy gem energy!'},
+      {id:'pumpkin-pie', name:'Pumpkin Pie Cream BlasTea', sub:'Fall Seasonal', cat:'Limited Edition', price:6.79, color:'#e08a3c', stripes:false, badge:'FALL 2026', bcls:'bdg-ltd', desc:'Traditional iced milk tea with a cozy pumpkin twist.', line:'Pumpkin Pie BlasTea! Autumn in a cup!'}
+    ];
+    var TOPPINGS = [
+      {id:'pearls', name:'Tapioca Pearls (Boba)', price:0.75, kind:'pearl', drop:'#2e1a12', line:'Boba pearls! The classic chew — plop, plop, plop!'},
+      {id:'crystal', name:'Crystal Boba', price:0.85, kind:'crystal', drop:'#efe8ff', line:'Crystal boba! Sparkly little jewels in my belly!'},
+      {id:'straw-pop', name:'Strawberry Popping Boba', sub:'Bursters', price:0.85, kind:'pop', drop:'#ff5d7e', line:'Strawberry bursters! They POP! Pop pop pop!'},
+      {id:'mango-pop', name:'Mango Popping Boba', sub:'Bursters', price:0.85, kind:'pop', drop:'#ffb02e', line:'Mango bursters! Tiny tropical explosions!'},
+      {id:'lychee-jelly', name:'Lychee Jelly', price:0.75, kind:'jelly', drop:'#ffeef5', line:'Lychee jelly! Wobbly little clouds!'},
+      {id:'rainbow-jelly', name:'Rainbow Jelly', price:0.75, kind:'jelly', drop:'#ff5d8f', line:'Rainbow jelly! A party in every single sip!'},
+      {id:'pudding', name:'Pudding', price:0.85, kind:'pudding', drop:'#ffd94d', line:'Pudding! Silky, wobbly, wonderful!'},
+      {id:'foam', name:'Milk Foam', sub:'Cream Cloud', price:1.00, kind:'foam', drop:'#fff3da', line:'Milk foam! Crown my drink with a creamy cloud!'}
+    ];
+    var BASE_LINES = ["Ummm delicious choices!", "That's gonna taste GREAT!", "Ooooh, I LOVE where this is going!"];
+    var GENIUS_LINE = "You're a drink mixing GENIE!";
+    var TRICK_LINES = ["Ta-daaa! Did you see that?!", "I practiced that one ALL morning!", "Wheee! Again! Again!", "Your wish is my command — almost!", "I am 90% boba, 10% showman!", "Pop! Fizz! TA-DAAA!", "Careful — I'm dangerously adorable."];
+    var MADNESS_TOPS = ['pearls','crystal','lychee-jelly','rainbow-jelly','pudding'];
+
+    /* ==================== STATE ==================== */
+    var SIZES = { 'Cub':-1.00, 'Regular':0, 'Jumbo':2.00 };
+    var state = { drink:null, size:'Regular', ice:'50', sweet:'50', toppings:{}, name:'', shaken:false };
+    var orderActive = false;
+    var REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var lastInteract = Date.now();
+    function poke(){ lastInteract = Date.now(); }
+
+    /* ==================== SOUND ==================== */
+    var AC = null;
+    function blip(freq, dur, type, vol){
+      try{
+        if(!AC) AC = new (window.AudioContext||window.webkitAudioContext)();
+        if(AC.state==='suspended') AC.resume();
+        var o = AC.createOscillator(), g = AC.createGain();
+        o.type = type||'sine'; o.frequency.value = freq;
+        g.gain.setValueAtTime(vol||0.06, AC.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + (dur||0.12));
+        o.connect(g); g.connect(AC.destination);
+        o.start(); o.stop(AC.currentTime + (dur||0.12));
+      }catch(e){}
+    }
+    function pop(){ blip(520 + Math.random()*160, 0.1, 'sine', 0.05); }
+    function clink(i){ setTimeout(function(){ blip(1400 + Math.random()*500, 0.07, 'triangle', 0.045); }, i*170); }
+    function chime(){ blip(660,0.12,'triangle',0.06); setTimeout(function(){blip(880,0.16,'triangle',0.06);},90); }
+
+    /* ==================== PIP CORE ==================== */
+    var bubble = document.getElementById('bubble');
+    var walker = document.getElementById('pipWalker');
+    var pipSvg = document.getElementById('pipSvg');
+    var pipSign = document.getElementById('pipSign');
+    var roamBubble = document.getElementById('roamBubble');
+    var roamFlag = document.getElementById('roamFlag');
+    var danceTimer = null, roamBubbleTimer = null;
+    var SIGN_TEXT = {1:'STEP 1 · PICK A DRINK', 2:'STEP 2 · MAKE IT YOURS', 3:'STEP 3 · TOPPINGS!', 4:'STEP 4 · SHAKE & REVIEW', 5:'TRACKING YOUR DRINK!'};
+    function say(text){
+      /* stage Pip's bubble ONLY — the roamer has his own (sayRoam), so exactly
+         one Pip speech bubble is ever visible at a time */
+      bubble.textContent = text;
+      bubble.classList.remove('pop'); void bubble.offsetWidth; bubble.classList.add('pop');
+    }
+    function sayRoam(text){
+      roamBubble.textContent = text;
+      roamBubble.classList.add('show');
+      clearTimeout(roamBubbleTimer);
+      roamBubbleTimer = setTimeout(function(){ roamBubble.classList.remove('show'); }, 3400);
+    }
+    function setFace(f){ pipSvg.setAttribute('data-face', f); }
+    function dance(kind, face, ms){
+      walker.className = 'pip-walker ' + kind;
+      if(face) setFace(face);
+      clearTimeout(danceTimer);
+      danceTimer = setTimeout(function(){ walker.className = 'pip-walker idle'; setFace(state.drink ? 'happy' : 'idle'); }, ms || 1300);
+    }
+    function react(text, anim, face, sound){
+      say(text); dance(anim||'bounce', face||'happy');
+      if(sound!=='none') pop();
+      poke();
+    }
+    /* ============ THE FLOSS — fires on EVERY ingredient drop-in ============
+       One clean floss state on the walker: calling it again mid-floss restarts
+       the burst (reflow-forced) and resets the single timer, so rapid taps keep
+       him flossing without stacking animations. After the burst, an optional
+       follow-up reaction (shiver / dizzy) plays. Under reduced motion there is
+       no floss — the line and fill still happen. */
+    function flossDance(after, face){
+      clearTimeout(danceTimer);
+      if(REDUCED){ if(after) after(); return; }
+      walker.classList.remove('floss'); void walker.offsetWidth;
+      walker.className = 'pip-walker floss';
+      setFace(face || 'happy');
+      /* 4 slow cycles (3.2s), then a FROZEN crossed-front pose for 0.8s — the
+         total ~4s visible window is what makes the dance unmissable live and
+         provable in a rapid frame burst (v1's 1.65s of thin arms was neither) */
+      danceTimer = setTimeout(function(){
+        walker.className = 'pip-walker floss-hold';
+        danceTimer = setTimeout(function(){
+          walker.className = 'pip-walker idle';
+          setFace(state.drink ? 'happy' : 'idle');
+          if(after) after();
+        }, 800);
+      }, 3220);
+    }
+    function reactFloss(text, followAnim, followFace, flossFace){
+      say(text); pop(); poke();
+      flossDance(function(){
+        if(followAnim) dance(followAnim, followFace || 'happy', followAnim==='shiver' ? 1450 : 1150);
+      }, flossFace);
+    }
+    function jumpOut(el){
+      if(REDUCED) return;
+      el.classList.remove('jumpout'); void el.offsetWidth; el.classList.add('jumpout');
+      setTimeout(function(){ el.classList.remove('jumpout'); }, 1000);
+    }
+    function pipJumpOut(){
+      if(REDUCED) return;
+      var prev = walker.className;
+      walker.className = 'pip-walker jumpout';
+      clearTimeout(danceTimer);
+      danceTimer = setTimeout(function(){ walker.className = 'pip-walker idle'; }, 1000);
+    }
+    function heartBurst(){
+      var layer = document.getElementById('dropLayer');
+      while(layer && layer.children.length > 40 && layer.firstChild) layer.removeChild(layer.firstChild);
+      var stage = document.getElementById('pipStage').getBoundingClientRect();
+      for(var i=0;i<9;i++){
+        var h = document.createElement('div');
+        h.className = 'heart-bit';
+        h.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 21 C5 15.5 2.5 11.8 2.5 8.2 C2.5 5.2 4.8 3 7.6 3 C9.3 3 11 4 12 5.6 C13 4 14.7 3 16.4 3 C19.2 3 21.5 5.2 21.5 8.2 C21.5 11.8 19 15.5 12 21Z" fill="#ff3d75"/></svg>';
+        h.style.left = '50%'; h.style.top = '96px';
+        layer.appendChild(h);
+        var ang = (i/9)*Math.PI*1.4 - Math.PI*1.2, dist = 74 + Math.random()*54;
+        if(h.animate) h.animate([
+          {transform:'translate(-50%,0) scale(.5)', opacity:1},
+          {transform:'translate(calc(-50% + '+(Math.cos(ang)*dist)+'px), '+(Math.sin(ang)*dist - 34)+'px) scale(1.15)', opacity:0}
+        ], {duration:850, easing:'cubic-bezier(.2,.8,.4,1)'});
+        (function(el){ setTimeout(function(){ el.remove(); }, 900); })(h);
+      }
+    }
+    /* tap Pip = random trick */
+    var dragging = null;
+    function pipTrick(){
+      var tricks = ['spin','backflip','hearts','jump','wiggle'];
+      var t = tricks[Math.floor(Math.random()*tricks.length)];
+      var line = TRICK_LINES[Math.floor(Math.random()*TRICK_LINES.length)];
+      if(t==='hearts'){ say(line); dance('bounce','love'); heartBurst(); chime(); }
+      else if(t==='jump'){ say(line); pipJumpOut(); setFace('wow'); pop(); }
+      else if(t==='spin'){ react(line, 'spin', 'happy'); }
+      else if(t==='backflip'){ react(line, 'backflip', 'wow'); }
+      else { react(line, 'wiggle', 'yum'); }
+      poke();
+    }
+    walker.addEventListener('pointerdown', function(e){
+      dragging = {x:e.clientX, y:e.clientY, dist:0, lx:e.clientX};
+    });
+    walker.addEventListener('pointermove', function(e){
+      if(!dragging) return;
+      dragging.dist += Math.abs(e.clientX - dragging.lx);
+      dragging.lx = e.clientX;
+      if(dragging.dist > 130){ dragging = null; shakePip('drag'); }
+    });
+    walker.addEventListener('pointerup', function(e){
+      if(dragging && dragging.dist < 14) pipTrick();
+      dragging = null;
+    });
+    /* a cancelled or lost pointer must never leave Pip stuck in drag mode */
+    walker.addEventListener('pointercancel', function(){ dragging = null; });
+    walker.addEventListener('lostpointercapture', function(){ dragging = null; });
+    window.addEventListener('pointerup', function(){ dragging = null; });
+    window.addEventListener('blur', function(){ dragging = null; });
+    walker.addEventListener('keydown', function(e){ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); pipTrick(); } });
+    function shakePip(how){
+      walker.className = 'pip-walker shaking';
+      var tl = document.getElementById('toppingsLayer');
+      tl.classList.remove('swirl'); void tl.getBoundingClientRect; tl.classList.add('swirl');
+      blip(300,0.15,'sawtooth',0.04);
+      setTimeout(function(){
+        dance('dizzy','dizzy',1100);
+        say(how==='drag' ? 'Whoa whoa WHOA — okay! Shaken, not stirred... I am the drink. Ha!' : 'SHAKEN! Everything is mixed and mingling!');
+        setTimeout(function(){ say('Okay okay — I laughed. That tickles every pearl I own!'); dance('wiggle','yum',900); }, 1700);
+      }, 650);
+      poke();
+    }
+    /* idle invite: if ignored ~14s, Pip waves and calls out */
+    setInterval(function(){
+      if(REDUCED || document.hidden) return;
+      if(Date.now() - lastInteract > 14000){
+        lastInteract = Date.now() - 6000;
+        walker.classList.add('wave');
+        document.getElementById('armR').classList.add('arm-wave');
+        say(orderActive ? 'Your drink is on its way — play Boba Catch with me down there!' : 'Psst — hey! Tap me! Or pick a drink and watch me fill up!');
+        setTimeout(function(){ walker.classList.remove('wave'); document.getElementById('armR').classList.remove('arm-wave'); }, 2200);
+      }
+    }, 3000);
+
+    /* ==================== ROAMING PIP — strolls the bottom of the screen ==================== */
+    var roamer = document.getElementById('roamer');
+    var roamerInner = document.getElementById('roamerInner');
+    /* Patrol bounds are computed from Pip's FULL footprint, not just his body: the speech
+       bubble is wider than he is (~43px past each side when centered) and the jump-out move
+       scales him ~2x (~45px past each side). A 54px safe margin on both edges keeps body,
+       bubble and jump-out fully inside the viewport at any width — he is never pinned or
+       clipped at an edge, even on the very first frame before the patrol starts moving. */
+    var ROAM_MARGIN = 62;
+    function roamBounds(){
+      var w = roamer.offsetWidth || 86;
+      var min = ROAM_MARGIN;
+      var max = Math.max(min, window.innerWidth - w - ROAM_MARGIN);
+      return { min:min, max:max };
+    }
+    var roam = { x: roamBounds().min + 12, dir: 1, speed: 26, last: 0, pausedUntil: 0, heroVisible: true };
+    /* HERO GUARD — the roamer stays parked (slid fully off the bottom, invisible,
+       non-interactive) while ANY part of the hero stage is in the viewport, so he can
+       never overlay the stage heading or hint chips at scroll 0. He slides in and
+       starts patrolling only once the hero has scrolled fully out of view, and
+       parks again the moment the hero comes back. */
+    function setHeroVisible(v){
+      roam.heroVisible = v;
+      roamer.classList.toggle('parked', v);
+      /* parked = fully out of the interaction model; un-parked = a normal tappable control */
+      roamer.setAttribute('aria-hidden', v ? 'true' : 'false');
+      roamer.tabIndex = v ? -1 : 0;
+      if(v) roamBubble.classList.remove('show');
+    }
+    var stageCardEl = document.getElementById('stageCard');
+    if('IntersectionObserver' in window && window.matchMedia('(max-width: 899px)').matches){
+      /* PHONE LAYOUT: once stuck, the stage card never leaves the viewport, so it
+         cannot signal "hero gone". Drive BOTH the compact .mini stage and the
+         roamer's hero guard off the order panel entering the top zone of the
+         screen: panel in the zone = guest is ordering = stage compacts and the
+         roamer may patrol; panel below the zone = hero zone = full-size stage
+         and the roamer stays parked. When the panel is hidden (order placed),
+         the hero is gone for the roamer, but the stage size is left untouched
+         so nothing jumps under the tracking view. */
+      var panelIO = new IntersectionObserver(function(entries){
+        entries.forEach(function(en){
+          var panelEl = en.target;
+          if(panelEl.offsetParent === null && !en.isIntersecting){ setHeroVisible(false); return; }
+          if(stageCardEl) stageCardEl.classList.toggle('mini', en.isIntersecting);
+          setHeroVisible(!en.isIntersecting);
+        });
+      }, {rootMargin:'0px 0px -28% 0px', threshold:0});
+      var orderPanelEl = document.getElementById('orderPanel');
+      if(orderPanelEl) panelIO.observe(orderPanelEl); else setHeroVisible(false);
+    } else if('IntersectionObserver' in window){
+      var heroIO = new IntersectionObserver(function(entries){
+        entries.forEach(function(en){ setHeroVisible(en.isIntersecting); });
+      }, {threshold: 0});
+      if(stageCardEl) heroIO.observe(stageCardEl);
+    } else {
+      setHeroVisible(false);
+    }
+    function roamBubbleAlign(){
+      var w = roamer.offsetWidth || 86;
+      var center = roam.x + w/2, vw = window.innerWidth;
+      roamBubble.classList.toggle('align-l', center < 118);
+      roamBubble.classList.toggle('align-r', center > vw - 118);
+    }
+    function roamStep(ts){
+      /* schedule the next frame FIRST: even if this frame's work throws,
+         the patrol loop can never die and leave a frozen duplicate loop */
+      requestAnimationFrame(roamStep);
+      if(!roam.last) roam.last = ts;
+      var dt = Math.min(0.05, (ts - roam.last)/1000); roam.last = ts;
+      if(ts > roam.pausedUntil && !document.hidden && !roam.heroVisible){
+        roam.x += roam.dir * roam.speed * dt;
+        var b = roamBounds();
+        if(roam.x >= b.max){ roam.x = b.max; roam.dir = -1; roamerInner.style.transform = 'scaleX(-1)'; if(Math.random()<0.5){ roamerInner.classList.remove('hop'); void roamerInner.offsetWidth; roamerInner.classList.add('hop'); } }
+        if(roam.x <= b.min){ roam.x = b.min; roam.dir = 1; roamerInner.style.transform = 'scaleX(1)'; }
+        roamer.style.transform = 'translateX(' + roam.x + 'px)';
+        roamBubbleAlign();
+      }
+    }
+    if(!REDUCED){ roamer.style.transform = 'translateX(' + roam.x + 'px)'; roamBubbleAlign(); requestAnimationFrame(roamStep); }
+    else { roamer.style.transform = 'translateX(' + roamBounds().max + 'px)'; }
+    window.addEventListener('resize', function(){
+      var b = roamBounds();
+      roam.x = Math.max(b.min, Math.min(b.max, roam.x));
+      roamer.style.transform = 'translateX(' + roam.x + 'px)';
+      roamBubbleAlign();
+    });
+    roamer.addEventListener('click', function(){
+      roam.pausedUntil = performance.now() + 1200;
+      jumpOut(roamerInner);
+      sayRoam('BOING! See? I can practically jump right out of this page!');
+      dance('celebrate','love'); chime(); poke();
+    });
+    /* YIELD — a covered control is a dead tap, and a dead tap is a crash in a
+       pitch about reliability. Four times a second (and on every scroll) Pip
+       checks whether his body overlaps any visible tappable control in the
+       demo view; if it does, he dips below the edge and goes non-interactive
+       until the coast has been clear for a beat. His own tap trick still
+       works whenever he is not covering anything. */
+    var yieldTimer = null;
+    function roamerYieldCheck(){
+      if(roam.heroVisible) return;
+      if(roamer.style.display === 'none') return;
+      var rr = roamer.getBoundingClientRect();
+      if(rr.bottom < 0 || rr.top > window.innerHeight) return;
+      var targets = document.querySelectorAll('#viewDemo .btn, #viewDemo .chip, #viewDemo .drink, #viewDemo .cat, #viewDemo input');
+      var covered = false;
+      for(var i=0;i<targets.length;i++){
+        var el = targets[i];
+        if(el.disabled) continue;
+        var r = el.getBoundingClientRect();
+        if(r.width === 0 || r.height === 0) continue;
+        if(r.bottom < 0 || r.top > window.innerHeight) continue;
+        if(r.left < rr.right && r.right > rr.left && r.top < rr.bottom && r.bottom > rr.top){ covered = true; break; }
+      }
+      if(covered){
+        roamer.classList.add('yield');
+        clearTimeout(yieldTimer);
+        yieldTimer = setTimeout(function(){ roamer.classList.remove('yield'); }, 1600);
+      }
+    }
+    setInterval(roamerYieldCheck, 250);
+    window.addEventListener('scroll', roamerYieldCheck, {passive:true});
+    /* peek reaction when panels scroll into view */
+    if('IntersectionObserver' in window && !REDUCED){
+      var peeked = {};
+      var io = new IntersectionObserver(function(entries){
+        entries.forEach(function(en){
+          if(en.isIntersecting && !peeked[en.target.id]){
+            peeked[en.target.id] = true;
+            roamer.classList.remove('peek'); void roamer.offsetWidth; roamer.classList.add('peek');
+            roamer.style.marginBottom = '14px';
+            setTimeout(function(){ roamer.style.marginBottom = '0px'; }, 700);
+            if(en.target.id==='gamePanel') sayRoam('Boba Catch! Catch the pearls, dodge the lemons — Genie Points are REAL. In my heart.');
+          }
+        });
+      }, {threshold: 0.35});
+      ['orderPanel','trackPanel','gamePanel'].forEach(function(id){ var el = document.getElementById(id); if(el) io.observe(el); });
+    }
+
+    /* ==================== LIQUID + TOPPINGS ==================== */
+    var liquidGroup = document.getElementById('liquidGroup');
+    var liquidRect = document.getElementById('liquidRect');
+    var foamGroup = document.getElementById('foamGroup');
+    var stripesEl = document.getElementById('stripes');
+    var iceEl = document.getElementById('iceCubes');
+    var topLayer = document.getElementById('toppingsLayer');
+    var SVGNS = 'http://www.w3.org/2000/svg';
+    function fillLevel(){
+      if(!state.drink) return 0;
+      var f = state.size==='Jumbo' ? 0.78 : state.size==='Cub' ? 0.42 : 0.56;
+      var n = 0; for(var k in state.toppings){ if(state.toppings[k]) n++; }
+      f += n * 0.03;
+      return Math.min(f, 0.9);
+    }
+    function surfaceY(){ return 278 - fillLevel()*212; }
+    function renderLiquid(){
+      var f = fillLevel();
+      liquidGroup.setAttribute('transform', 'translate(0,' + ((1-f)*212) + ')');
+      foamGroup.setAttribute('transform', 'translate(0,' + (surfaceY()-74) + ')');
+      foamGroup.setAttribute('opacity', state.toppings.foam ? '1' : '0');
+      document.getElementById('mixSwirl').setAttribute('opacity', state.shaken ? '0.22' : '0');
+      if(state.shaken) stripesEl.setAttribute('opacity', state.drink && state.drink.stripes ? '0.3' : '0');
+    }
+    function renderToppings(){
+      topLayer.innerHTML = '';
+      function el(tag, attrs){
+        var e = document.createElementNS(SVGNS, tag);
+        for(var a in attrs) e.setAttribute(a, attrs[a]);
+        topLayer.appendChild(e); return e;
+      }
+      var seed = 7;
+      function rnd(){ seed = (seed*37+11)%97; return seed/97; }
+      if(state.toppings.pearls){ for(var i=0;i<9;i++){ var cx=88+rnd()*64, cy=246+rnd()*16; el('circle',{cx:cx, cy:cy, r:8.5, fill:'#2e1a12'}); el('circle',{cx:cx-2.5, cy:cy-2.5, r:2.6, fill:'#7a5a44'}); } }
+      if(state.toppings.crystal){ for(var j=0;j<7;j++){ el('circle',{cx:90+rnd()*60, cy:238+rnd()*18, r:7.5, fill:'rgba(255,255,255,.88)', stroke:'#c9b3f5','stroke-width':1.5}); } }
+      if(state.toppings['straw-pop']){ for(var s1=0;s1<6;s1++){ el('circle',{cx:90+rnd()*60, cy:240+rnd()*16, r:6.8, fill:'#ff5d7e'}); el('circle',{cx:90+rnd()*60, cy:238+rnd()*16, r:2.2, fill:'#ffd3dd'}); } }
+      if(state.toppings['mango-pop']){ for(var s2=0;s2<6;s2++){ el('circle',{cx:90+rnd()*60, cy:240+rnd()*16, r:6.8, fill:'#ffb02e'}); } }
+      if(state.toppings['lychee-jelly']){ for(var q=0;q<5;q++){ el('rect',{x:88+rnd()*56, y:240+rnd()*16, width:13, height:13, rx:4, fill:'#fff0f6', stroke:'#f0b8cd','stroke-width':1.2, transform:'rotate('+(rnd()*40-20)+' 100 250)'}); } }
+      if(state.toppings['rainbow-jelly']){ var cols=['#ff5d8f','#ffa62b','#58b368','#4db8ff','#b18fe8']; for(var q2=0;q2<6;q2++){ el('rect',{x:88+rnd()*56, y:240+rnd()*16, width:13, height:13, rx:3.5, fill:cols[q2%5], transform:'rotate('+(rnd()*40-20)+' 100 250)'}); } }
+      if(state.toppings.pudding){ for(var p=0;p<4;p++){ el('rect',{x:92+rnd()*48, y:236+rnd()*14, width:17, height:14, rx:4, fill:'#ffd94d', stroke:'#e0a800','stroke-width':1.5}); } }
+      renderLiquid();
+    }
+    /* physical drop-in animation for a topping */
+    function dropIn(kind, color){
+      if(REDUCED) return;
+      var layer = document.getElementById('dropLayer');
+      /* rapid-tap guard: prune stale drop elements so the layer stays light */
+      while(layer.children.length > 40 && layer.firstChild) layer.removeChild(layer.firstChild);
+      var stageRect = document.getElementById('pipStage').getBoundingClientRect();
+      var count = kind==='foam' ? 1 : 3;
+      for(var i=0;i<count;i++){
+        var d = document.createElement('div');
+        d.className = 'drop-item' + (kind==='jelly'||kind==='pudding' ? ' '+kind : '');
+        d.style.background = 'radial-gradient(circle at 32% 30%, rgba(255,255,255,.75), ' + color + ' 72%)';
+        if(kind==='foam'){ d.style.width='64px'; d.style.height='30px'; d.style.marginLeft='-32px'; d.style.borderRadius='50%'; }
+        var startX = stageRect.width/2 + (i-(count-1)/2)*30 + (Math.random()*14-7);
+        d.style.left = startX + 'px'; d.style.top = '-8px';
+        layer.appendChild(d);
+        var miniF = document.getElementById('stageCard').classList.contains('mini') ? 0.40 : 1;
+        var fall = Math.round((158 + (kind==='foam' ? -52 : Math.random()*22)) * miniF);
+        if(d.animate){
+          var anim = d.animate([
+            {transform:'translateY(0) scale(1)', opacity:1},
+            {transform:'translateY(' + fall + 'px) scale(1)', opacity:1, offset:.78},
+            {transform:'translateY(' + (fall-9) + 'px) scale(1.12,.82)', opacity:1, offset:.88},
+            {transform:'translateY(' + fall + 'px) scale(1)', opacity:0}
+          ], {duration:560 + i*110, easing:'cubic-bezier(.4,.6,.6,1)', delay:i*110});
+          anim.onfinish = (function(el){ return function(){ el.remove(); }; })(d);
+        } else { (function(el){ setTimeout(function(){ el.remove(); }, 700); })(d); }
+        if(kind!=='foam') setTimeout(pop, 420 + i*110);
+      }
+    }
+    function iceClinkIn(level){
+      var n = level==='100' ? 5 : level==='50' ? 3 : level==='30' ? 2 : 0;
+      var layer = document.getElementById('dropLayer');
+      var stageRect = document.getElementById('pipStage').getBoundingClientRect();
+      for(var i=0;i<n;i++){
+        clink(i);
+        if(REDUCED) continue;
+        var d = document.createElement('div');
+        d.className = 'drop-item icecube';
+        d.style.left = (stageRect.width/2 + (i-(n-1)/2)*26) + 'px'; d.style.top = '-8px';
+        layer.appendChild(d);
+        if(d.animate){
+          var miniF = document.getElementById('stageCard').classList.contains('mini') ? 0.40 : 1;
+          var anim = d.animate([
+            {transform:'translateY(0) rotate(0deg)', opacity:1},
+            {transform:'translateY(' + Math.round(150*miniF) + 'px) rotate(140deg)', opacity:1, offset:.8},
+            {transform:'translateY(' + Math.round(142*miniF) + 'px) rotate(160deg)', opacity:0}
+          ], {duration:520, delay:i*170, easing:'cubic-bezier(.4,.6,.6,1)'});
+          anim.onfinish = (function(el){ return function(){ el.remove(); }; })(d);
+        } else { (function(el){ setTimeout(function(){ el.remove(); }, 700); })(d); }
+      }
+    }
+    function sugarPour(){
+      var sw = document.getElementById('sugarSwirl');
+      sw.classList.remove('pour'); void sw.offsetWidth; sw.classList.add('pour');
+      blip(900,0.25,'sine',0.03); setTimeout(function(){ blip(1150,0.2,'sine',0.03); },140);
+    }
+
+    /* ==================== MONEY / SUMMARY ==================== */
+    function total(){
+      if(!state.drink) return 0;
+      var t = state.drink.price + (SIZES[state.size]||0);
+      TOPPINGS.forEach(function(tp){ if(state.toppings[tp.id]) t += tp.price; });
+      return Math.round(t*100)/100;
+    }
+    function money(n){ return '$' + n.toFixed(2); }
+    function summaryText(){
+      if(!state.drink) return 'No drink picked yet — Pip is thirsty!';
+      var tops = TOPPINGS.filter(function(t){return state.toppings[t.id];}).length;
+      return state.size + ' · ' + state.drink.name + (tops? ' · ' + tops + ' topping' + (tops>1?'s':'') : ' · no toppings yet') + (state.shaken ? ' · shaken!' : '');
+    }
+    function refreshSummary(){
+      document.getElementById('summaryText').textContent = summaryText();
+      document.getElementById('summaryTotal').textContent = money(total());
+    }
+
+    /* ==================== STEP 1: DRINKS ==================== */
+    var catRow = document.getElementById('catRow');
+    CATS.forEach(function(c){
+      var b = document.createElement('button');
+      b.className = 'cat' + (c==='All' ? ' active' : ''); b.dataset.cat = c; b.textContent = c;
+      catRow.appendChild(b);
+    });
+    var grid = document.getElementById('drinkGrid');
+    DRINKS.forEach(function(d){
+      var b = document.createElement('button');
+      b.className = 'drink'; b.dataset.cat = d.cat; b.dataset.id = d.id;
+      b.innerHTML = '<span class="check">✓</span><span class="swatch" style="background:'+d.color+'"></span>' +
+        '<span class="nm">'+d.name+(d.sub ? ' <span style="font-size:12.5px; color:var(--ink-soft);">('+d.sub+')</span>' : '')+'</span>' +
+        '<span class="desc">'+d.desc+'</span>' +
+        '<span class="meta"><span class="oz">22 OZ</span>' + (d.badge ? '<span class="bdg '+d.bcls+'">'+d.badge+'</span>' : '') + '</span>' +
+        '<span class="ct">'+d.cat+'</span><span class="pr">'+money(d.price)+'</span>';
+      b.addEventListener('click', function(){ pickDrink(d, b); poke(); });
+      grid.appendChild(b);
+    });
+    catRow.addEventListener('click', function(e){
+      if(!e.target || !e.target.closest) return;
+      var btn = e.target.closest('.cat'); if(!btn) return;
+      document.querySelectorAll('.cat').forEach(function(c){ c.classList.toggle('active', c===btn); });
+      var cat = btn.dataset.cat;
+      document.querySelectorAll('.drink').forEach(function(el){ el.style.display = (cat==='All'||el.dataset.cat===cat)?'':'none'; });
+      pop(); poke();
+      if(cat!=='All') say(cat + ' — excellent aisle choice. I live here now.');
+    });
+    function pickDrink(d, btn){
+      state.drink = d; state.shaken = false;
+      document.getElementById('shakeBtn').classList.remove('done');
+      document.getElementById('shakeLbl').textContent = 'Hold to SHAKE MY DRINK';
+      document.querySelectorAll('.drink').forEach(function(el){ el.classList.toggle('sel', el===btn); });
+      document.getElementById('next1').disabled = false;
+      liquidRect.setAttribute('fill', d.color);
+      stripesEl.setAttribute('opacity', d.stripes ? '0.85' : '0');
+      if(d.cat==='Boba Madness'){
+        MADNESS_TOPS.forEach(function(id){ state.toppings[id] = true; });
+        document.querySelectorAll('#topChips .chip').forEach(function(ch){ if(state.toppings[ch.dataset.id]) ch.classList.add('sel'); });
+        renderToppings();
+      }
+      renderLiquid(); refreshSummary();
+      var line = (Math.random()<0.5 ? BASE_LINES[Math.floor(Math.random()*2)] + ' ' : '') + d.line;
+      reactFloss(line);
+      /* Pip hops onto the picked card for a victory lap */
+      if(!REDUCED && btn.animate){
+        btn.animate([{transform:'scale(1)'},{transform:'scale(1.045) rotate(-.6deg)'},{transform:'scale(1)'}], {duration:420, easing:'ease-out'});
+      }
+    }
+
+    /* ==================== STEP 2: SIZE / ICE / SWEET ==================== */
+    function chipGroup(id, cb){
+      document.getElementById(id).addEventListener('click', function(e){
+        if(!e.target || !e.target.closest) return;
+        var btn = e.target.closest('.chip'); if(!btn) return;
+        this.querySelectorAll('.chip').forEach(function(c){ c.classList.toggle('sel', c===btn); });
+        cb(btn); poke();
+      });
+    }
+    chipGroup('sizeChips', function(btn){
+      state.size = btn.dataset.size; renderLiquid(); refreshSummary();
+      if(state.size==='Jumbo') react('JUMBO 44 ounces?! A drink with its own zip code! Respect.', 'bounce', 'wow');
+      else if(state.size==='Cub') react('Cub Cup! Little in size, mighty in flavor — just like me!', 'wiggle', 'happy');
+      else react('Regular 22 — the classic Teapioca pour!', 'wiggle', 'happy');
+    });
+    chipGroup('iceChips', function(btn){
+      var prevIce = parseInt(state.ice, 10);
+      state.ice = btn.dataset.ice;
+      var newIce = parseInt(state.ice, 10);
+      iceEl.setAttribute('opacity', state.ice==='0' ? '0' : String(0.35 + (+state.ice)/130));
+      iceClinkIn(state.ice);
+      setTimeout(function(){
+        var line, anim, face;
+        if(state.ice==='100'){ line = "Extra ice?! Brrr — I'm shivering! So refreshing though!"; anim = 'shiver'; face = 'wow'; }
+        else if(state.ice==='0'){ line = 'No ice — full flavor, nothing watered down. Bold!'; anim = 'bounce'; face = 'happy'; }
+        else { line = 'Clink clink! Ice is IN — chilly in the best way!'; anim = 'wiggle'; face = 'happy'; }
+        /* cubes dropping IN (level went up) = an ingredient drop-in → FLOSS first, then the level reaction */
+        if(newIce > prevIce) reactFloss(line, anim==='shiver' ? 'shiver' : null, face, face);
+        else react(line, anim, face);
+      }, state.ice==='0' ? 0 : 300);
+    });
+    chipGroup('sweetChips', function(btn){
+      var prevSweet = parseInt(state.sweet, 10);
+      state.sweet = btn.dataset.sweet;
+      var newSweet = parseInt(state.sweet, 10);
+      sugarPour();
+      setTimeout(function(){
+        var line, anim, face;
+        if(state.sweet==='125'){ line = "125%?! MAXIMUM sweet — I'm getting dizzy! Wheee!"; anim = 'dizzy'; face = 'dizzy'; }
+        else if(state.sweet==='100'){ line = "100% sweet! Sugar rush incoming — hold onto my straw!"; anim = 'dizzy'; face = 'dizzy'; }
+        else if(state.sweet==='0'){ line = 'Zero sweet? Ooh, a purist. I respect it.'; anim = 'bounce'; face = 'wow'; }
+        else if(state.sweet==='70'){ line = "Sweetness 70% — that's gonna taste GREAT!"; anim = 'wiggle'; face = 'yum'; }
+        else { line = 'Sweetness at ' + state.sweet + '% — smooth move!'; anim = 'bounce'; face = 'happy'; }
+        /* sugar pouring IN (level went up) = an ingredient drop-in → FLOSS first, then the level reaction */
+        if(newSweet > prevSweet) reactFloss(line, anim==='dizzy' ? 'dizzy' : null, face);
+        else react(line, anim, face);
+      }, 220);
+    });
+
+    /* ==================== STEP 3: TOPPINGS ==================== */
+    var topChips = document.getElementById('topChips');
+    var TOP_VIS = {
+      pearls:{bg:'#2e1a12', sq:false}, crystal:{bg:'#e6dcff', sq:false}, 'straw-pop':{bg:'#ff5d7e', sq:false}, 'mango-pop':{bg:'#ffb02e', sq:false},
+      'lychee-jelly':{bg:'#ffeef5', sq:true}, 'rainbow-jelly':{bg:'#ff5d8f', sq:true}, pudding:{bg:'#ffd94d', sq:true}, foam:{bg:'#fff3da', sq:true}
+    };
+    TOPPINGS.forEach(function(tp){
+      var v = TOP_VIS[tp.id];
+      var b = document.createElement('button');
+      b.className = 'chip top-chip'; b.dataset.id = tp.id;
+      if(state.toppings[tp.id]) b.classList.add('sel');
+      b.innerHTML = '<span class="top-dot'+(v.sq?' sq':'')+'" style="background:'+v.bg+'"></span>' +
+        '<span style="flex:1; text-align:left;">'+tp.name+(tp.sub ? ' <span style="font-size:12px; color:var(--ink-soft);">· '+tp.sub+'</span>' : '')+'</span><span class="plus">+'+money(tp.price)+'</span>';
+      b.addEventListener('click', function(){
+        state.toppings[tp.id] = !state.toppings[tp.id];
+        b.classList.toggle('sel', !!state.toppings[tp.id]);
+        poke();
+        if(state.toppings[tp.id]){
+          dropIn(tp.kind, tp.drop);
+          setTimeout(function(){ renderToppings(); refreshSummary(); }, tp.kind==='foam' ? 500 : 430);
+          reactFloss(tp.line, null, null, tp.id==='foam' ? 'love' : 'happy');
+          if(state.toppings.pearls && state.drink && state.drink.stripes) setTimeout(function(){ say('Tiger stripes AND pearls?! ' + BASE_LINES[1]); }, 1600);
+          if(state.toppings.pearls && state.toppings.foam) setTimeout(function(){ say('Pearls below, milk foam above — a masterpiece sandwich!'); }, 1600);
+        } else {
+          renderToppings(); refreshSummary();
+          say('Okay, ' + tp.name.toLowerCase() + ' is out. Your call, boss!'); dance('wiggle','idle',700);
+        }
+      });
+      topChips.appendChild(b);
+    });
+
+    /* ==================== STEP NAV ==================== */
+    var curStep = 1;
+    function goStep(n){
+      n = Math.max(1, Math.min(4, (n|0) || 1));
+      /* step-skipping guard: no step past 1 exists without a drink picked —
+         a corrupt or raced state routes back to step 1 instead of crashing
+         the review builder on a null drink */
+      if(n > 1 && !state.drink) n = 1;
+      curStep = n;
+      [1,2,3,4].forEach(function(i){
+        document.getElementById('step'+i).classList.toggle('hidden', i!==n);
+        var dot = document.querySelector('[data-dot="'+i+'"]');
+        dot.classList.toggle('on', i===n); dot.classList.toggle('done', i<n);
+      });
+      pipSign.textContent = SIGN_TEXT[n];
+      roamFlag.textContent = SIGN_TEXT[n];
+      if(n===4) buildReview();
+      roam.pausedUntil = performance.now() + 400;
+      document.getElementById('orderPanel').scrollIntoView({behavior: REDUCED ? 'auto' : 'smooth', block:'start'});
+      poke();
+    }
+    document.getElementById('next1').addEventListener('click', function(){ goStep(2); react('Now make it YOURS — size, ice, sweetness!', 'bounce', 'happy'); });
+    document.getElementById('next2').addEventListener('click', function(){ goStep(3); react('Topping time! This is where legends are made.', 'wiggle', 'love'); });
+    document.getElementById('next3').addEventListener('click', function(){ goStep(4); react(GENIUS_LINE, 'spin', 'love'); });
+    document.querySelectorAll('[data-back]').forEach(function(b){
+      b.addEventListener('click', function(){ goStep(+b.dataset.back); });
+    });
+
+    /* ==================== STEP 4: REVIEW + SCORE + SHAKE ==================== */
+    function geniusScore(){
+      var s = 30, why = [];
+      var tops = TOPPINGS.filter(function(t){ return state.toppings[t.id]; });
+      s += tops.length * 8; if(tops.length) why.push(tops.length + ' topping' + (tops.length>1?'s':''));
+      if(state.size==='Jumbo'){ s += 6; why.push('went Jumbo'); }
+      if(state.toppings.pearls && state.toppings.foam){ s += 8; why.push('pearls + foam combo'); }
+      if(state.drink && state.drink.stripes && state.toppings.pearls){ s += 8; why.push('Tiger Combo'); }
+      if(state.drink && state.drink.cat==='Boba Madness'){ s += 8; why.push('full Madness loadout'); }
+      if(state.ice==='50' && state.sweet==='50'){ s += 5; why.push('perfect 50/50 balance'); }
+      if(state.shaken){ s += 7; why.push('hand-shaken finish'); }
+      if(tops.length>=3){ s += 6; why.push('Topping Tornado'); }
+      return { score: Math.min(100, s), why: why };
+    }
+    function scoreLabel(s){
+      if(s>=90) return 'Certified Drink Mixing GENIE';
+      if(s>=75) return 'Flavor Wizard';
+      if(s>=60) return 'Topping Artist';
+      if(s>=45) return 'Promising Mixer';
+      return 'Beautiful Minimalist';
+    }
+    function buildReview(){
+      if(!state.drink){ goStep(1); return; }
+      var tops = TOPPINGS.filter(function(t){ return state.toppings[t.id]; });
+      var rows = '';
+      rows += '<div class="review-line"><span class="k">Drink</span><span>' + state.drink.name + (state.drink.sub ? ' ('+state.drink.sub+')' : '') + '</span></div>';
+      rows += '<div class="review-line"><span class="k">Size</span><span>' + state.size + (state.size==='Cub' ? ' · 12 oz (−$1.00)' : state.size==='Jumbo' ? ' · 44 oz (+$2.00)' : ' · 22 oz') + '</span></div>';
+      rows += '<div class="review-line"><span class="k">Ice / Sweetness</span><span>' + ({'0':'No Ice','30':'Light Ice','50':'Regular Ice','100':'Extra Ice'})[state.ice] + ' / ' + state.sweet + '%</span></div>';
+      rows += '<div class="review-line"><span class="k">Toppings</span><span>' + (tops.length ? tops.map(function(t){return t.name;}).join(', ') : 'None — pure and simple') + '</span></div>';
+      rows += '<div class="review-line"><span class="k">Finish</span><span>' + (state.shaken ? 'Hand-shaken ✓' : 'Not shaken yet') + '</span></div>';
+      rows += '<div class="review-total"><span>Total</span><span class="v">' + money(total()) + '</span></div>';
+      document.getElementById('reviewCard').innerHTML = rows;
+      var g = geniusScore();
+      document.getElementById('scoreNum').textContent = g.score;
+      document.getElementById('scoreLbl').textContent = 'Mix Genius Score — ' + scoreLabel(g.score);
+      document.getElementById('scoreWhy').textContent = g.why.length ? ('Earned for: ' + g.why.join(' · ')) : 'A clean, classic build.';
+      var nameInput = document.getElementById('drinkName');
+      if(!nameInput.value) nameInput.placeholder = 'e.g. The ' + state.drink.name.split(' ')[0] + ' Tornado';
+    }
+    /* Shake My Drink — press & hold */
+    var shakeBtn = document.getElementById('shakeBtn'), shakeFill = document.getElementById('shakeFill');
+    var shakeHold = null, shakeStart = 0;
+    function shakeTick(){
+      try{
+        var p = Math.min(1, (Date.now() - shakeStart)/1000);
+        shakeFill.style.width = (p*100) + '%';
+        if(p >= 1){ finishShake(); return; }
+        shakeHold = requestAnimationFrame(shakeTick);
+      }catch(e){
+        /* a dead shake loop must never strand the button mid-hold */
+        shakeHold = null; shakeFill.style.width = '0%';
+        if(window.__pipOnError) window.__pipOnError('shake', e && e.message);
+      }
+    }
+    function finishShake(){
+      cancelAnimationFrame(shakeHold); shakeHold = null;
+      state.shaken = true;
+      walker.className = 'pip-walker idle';
+      shakeFill.style.width = '100%';
+      shakeBtn.classList.add('done');
+      document.getElementById('shakeLbl').textContent = 'SHAKEN! ✓';
+      document.getElementById('shakeHint').textContent = 'Layers mixed, flavors married. That is exactly how they do it at the counter.';
+      document.getElementById('placeOrder').classList.add('pulse');
+      stripesEl.setAttribute('opacity', state.drink && state.drink.stripes ? '0.3' : '0');
+      renderLiquid(); buildReview(); refreshSummary();
+      react('SHAKEN TO PERFECTION! ' + GENIUS_LINE, 'celebrate', 'love');
+      chime();
+    }
+    shakeBtn.addEventListener('pointerdown', function(e){
+      e.preventDefault(); poke();
+      if(state.shaken) { shakePip('button'); return; }
+      shakeStart = Date.now();
+      walker.className = 'pip-walker shaking';
+      var tl = document.getElementById('toppingsLayer');
+      tl.classList.remove('swirl'); void tl.getBoundingClientRect; tl.classList.add('swirl');
+      shakeHold = requestAnimationFrame(shakeTick);
+    });
+    ['pointerup','pointerleave','pointercancel','lostpointercapture'].forEach(function(ev){
+      shakeBtn.addEventListener(ev, function(){
+        if(shakeHold && !state.shaken){
+          cancelAnimationFrame(shakeHold); shakeHold = null;
+          shakeFill.style.width = '0%';
+          walker.className = 'pip-walker idle';
+          say('Almost! Hold it a full second — shake it like you MEAN it!');
+        }
+      });
+    });
+
+    /* ==================== ORDER + TRACKING ==================== */
+    var STAGES = [
+      {name:'Received', line:'Order received! The kitchen has your masterpiece!', anim:'bounce', face:'happy'},
+      {name:'Brewing', line:'Brewing now... smell that? That is YOUR drink waking up.', anim:'wiggle', face:'yum'},
+      {name:'Shaking & Mixing', line:'SHAKE SHAKE SHAKE! Everything is becoming best friends in there!', anim:'wiggle', face:'happy'},
+      {name:'Sealing', line:'Sealing it up tight — not one pearl escapes on my watch!', anim:'bounce', face:'wow'},
+      {name:'Ready for Pickup', line:'IT\u2019S READY! Come and get it, genius!', anim:'celebrate', face:'love'}
+    ];
+    var stageIcons = [
+      '<svg viewBox="0 0 24 24" fill="none" stroke="#e83e77" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16v12H4z"/><path d="M4 10l8 5 8-5"/></svg>',
+      '<svg viewBox="0 0 24 24" fill="none" stroke="#e83e77" stroke-width="2.2" stroke-linecap="round"><path d="M7 3h10l-1.5 7H8.5Z"/><path d="M6 21h12M12 10v11"/><path d="M9 6.5c1.5 1 4.5 1 6 0"/></svg>',
+      '<svg viewBox="0 0 24 24" fill="none" stroke="#e83e77" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3h8l1 18H7Z"/><path d="M7.5 9h9M8.8 15h6.4"/></svg>',
+      '<svg viewBox="0 0 24 24" fill="none" stroke="#e83e77" stroke-width="2.2" stroke-linecap="round"><rect x="4" y="9" width="16" height="4" rx="2"/><path d="M6 13v7a1.5 1.5 0 0 0 1.5 1.5h9A1.5 1.5 0 0 0 18 20v-7"/></svg>',
+      '<svg viewBox="0 0 24 24" fill="none" stroke="#e83e77" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7L9.5 17.5 4 12"/></svg>'
+    ];
+    var stagesRow = document.getElementById('stagesRow');
+    STAGES.forEach(function(s, i){
+      var d = document.createElement('div');
+      d.className = 'stage-item'; d.id = 'stageItem' + i;
+      d.innerHTML = '<div class="ic">' + stageIcons[i] + '</div>' + s.name;
+      stagesRow.appendChild(d);
+    });
+    var TOTAL_MS = 90000, orderStart = 0, trackRaf = 0, currentStage = -1, orderDone = false;
+    var orderNumber = 0, genieFromGame = 0, gameJumped = false;
+
+    var placingOrder = false;
+    document.getElementById('placeOrder').addEventListener('click', function(){
+      /* re-entry guard: a double-tap (or a tap with no drink) can never spawn
+         duplicate tracking loops, duplicate order numbers, or a null crash */
+      if(placingOrder) return;
+      if(!state.drink){ goStep(1); return; }
+      placingOrder = true;
+      setTimeout(function(){ placingOrder = false; }, 1200);
+      state.name = document.getElementById('drinkName').value.trim() || 'Untitled Masterpiece';
+      document.getElementById('orderPanel').classList.add('hidden');
+      document.getElementById('trackPanel').classList.remove('hidden');
+      orderNumber = 1000 + Math.floor(Math.random()*9000);
+      document.getElementById('orderNo').textContent = 'Order #TP-' + orderNumber;
+      document.getElementById('trackDrinkName').textContent = '\u201C' + state.name + '\u201D · ' + state.size + ' ' + state.drink.name;
+      var tops = TOPPINGS.filter(function(t){ return state.toppings[t.id]; });
+      document.getElementById('drinkRecap').innerHTML = '<b>' + state.drink.name + '</b> · ' + state.size + ' · Ice ' + state.ice + '% · Sweet ' + state.sweet + '%' +
+        (tops.length ? ' · ' + tops.map(function(t){return t.name;}).join(', ') : '') + (state.shaken ? ' · Shaken' : '') + ' · Total ' + money(total()) + ' (demo)';
+      document.getElementById('pickupCode').textContent = 'BOBA-' + (1000 + Math.floor(Math.random()*9000));
+      document.getElementById('readyBox').classList.remove('show');
+      pipSign.textContent = SIGN_TEXT[5]; roamFlag.textContent = SIGN_TEXT[5];
+      orderActive = true; orderDone = false; currentStage = -1;
+      orderStart = Date.now();
+      react('OMG I gotta try this one! Order sent — I\u2019ll walk it down the track myself!', 'spin', 'love');
+      chime();
+      setTimeout(pipJumpOut, 500);
+      cancelAnimationFrame(trackRaf);
+      tickTrack();
+      document.getElementById('trackPanel').scrollIntoView({behavior: REDUCED ? 'auto' : 'smooth', block:'start'});
+      poke();
+    });
+    function stageFor(p){ if(p>=1) return 4; if(p>=0.72) return 3; if(p>=0.45) return 2; if(p>=0.16) return 1; return 0; }
+    function tickTrack(){
+      if(!orderActive) return;
+      try{
+      var elapsed = Date.now() - orderStart;
+      var p = Math.min(1, elapsed / TOTAL_MS);
+      document.getElementById('trackFill').style.width = (p*100) + '%';
+      document.getElementById('trackPip').style.left = (p*100) + '%';
+      var remain = Math.max(0, Math.ceil((TOTAL_MS - elapsed)/1000));
+      var countEl = document.getElementById('countNum');
+      var remainTxt = Math.floor(remain/60) + ':' + String(remain%60).padStart(2,'0');
+      if(countEl.textContent !== remainTxt){
+        countEl.textContent = remainTxt;
+        countEl.classList.remove('tick'); void countEl.offsetWidth; countEl.classList.add('tick');
+      }
+      var st = stageFor(p);
+      if(st !== currentStage){
+        currentStage = st;
+        STAGES.forEach(function(s, i){
+          var el = document.getElementById('stageItem'+i);
+          el.classList.toggle('on', i===st && !orderDone);
+          el.classList.toggle('done', i<st || orderDone);
+          if(i===st && !orderDone){ el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); }
+        });
+        var S = STAGES[st];
+        react(S.line, st>=3 ? 'celebrate' : S.anim, S.face, st===4 ? 'none' : undefined);
+        if(st===4) finishOrder();
+      }
+      if(p<1 && orderActive) trackRaf = requestAnimationFrame(tickTrack);
+      }catch(e){
+        if(window.__pipOnError) window.__pipOnError('tracking', e && e.message);
+        /* keep the order alive: retry the loop unless the order finished */
+        if(orderActive && !orderDone) trackRaf = requestAnimationFrame(tickTrack);
+      }
+    }
+    function finishOrder(){
+      orderDone = true;
+      STAGES.forEach(function(s,i){ var el=document.getElementById('stageItem'+i); el.classList.remove('on'); el.classList.add('done'); });
+      document.getElementById('readyBox').classList.add('show');
+      jumpOut(document.getElementById('trackPip'));
+      pipJumpOut();
+      setTimeout(function(){ jumpOut(roamerInner); }, 350);
+      endGame(true);
+      var reward = 25 + genieFromGame;
+      document.getElementById('genieReward').textContent = 'You earned ' + reward + ' Genie Points for this order' + (genieFromGame ? ' (includes ' + genieFromGame + ' from Boba Catch!)' : ' — play Boba Catch next time to earn more!');
+      chime(); setTimeout(chime, 220);
+      confettiBurst();
+    }
+    function confettiBurst(){
+      var box = document.getElementById('readyBox');
+      var colors = ['#ff5d8f','#ffa62b','#58b368','#9a6ee8','#f5b921','#2e1a12'];
+      for(var i=0;i<42;i++){
+        var s = document.createElement('span');
+        s.className = 'confetto';
+        var sz = 7 + Math.random()*9;
+        s.style.width = sz+'px'; s.style.height = sz+'px';
+        s.style.left = (Math.random()*96)+'%';
+        s.style.background = colors[i%colors.length];
+        if(i%3===0) s.style.borderRadius = '3px';
+        s.style.animationDuration = (1.4 + Math.random()*1.6)+'s';
+        box.appendChild(s);
+        (function(el){ setTimeout(function(){ el.remove(); }, 3400); })(s);
+      }
+    }
+    /* full clean-slate reset: starting over after an order must carry NOTHING
+       over — no stale drink, toppings, shake state, game points, or timers —
+       so back-to-back orders behave identically every single time */
+    function resetOrderState(){
+      cancelAnimationFrame(trackRaf); trackRaf = 0;
+      orderActive = false; orderDone = false; currentStage = -1; orderStart = 0;
+      placingOrder = false;
+      genieFromGame = 0; gameJumped = false;
+      if(game.playing) endGame(false);
+      game.items.forEach(function(it){ if(it.el && it.el.parentNode) it.el.remove(); }); game.items = [];
+      game.keys = {};
+      state.drink = null; state.size = 'Regular'; state.ice = '50'; state.sweet = '50';
+      state.toppings = {}; state.name = ''; state.shaken = false;
+      document.querySelectorAll('.drink.sel').forEach(function(el){ el.classList.remove('sel'); });
+      document.querySelectorAll('#topChips .chip').forEach(function(ch){ ch.classList.remove('sel'); });
+      document.querySelectorAll('#sizeChips .chip').forEach(function(ch){ ch.classList.toggle('sel', ch.dataset.size === 'Regular'); });
+      document.querySelectorAll('#iceChips .chip').forEach(function(ch){ ch.classList.toggle('sel', ch.dataset.ice === '50'); });
+      document.querySelectorAll('#sweetChips .chip').forEach(function(ch){ ch.classList.toggle('sel', ch.dataset.sweet === '50'); });
+      var nameInput = document.getElementById('drinkName'); if(nameInput) nameInput.value = '';
+      var sb = document.getElementById('shakeBtn');
+      sb.classList.remove('done');
+      document.getElementById('shakeLbl').textContent = 'Hold to SHAKE MY DRINK';
+      document.getElementById('shakeHint').textContent = 'Press & hold — Pip mixes the layers and seals in the flavor.';
+      document.getElementById('shakeFill').style.width = '0%';
+      if(shakeHold){ cancelAnimationFrame(shakeHold); shakeHold = null; }
+      document.getElementById('next1').disabled = true;
+      document.getElementById('placeOrder').classList.remove('pulse');
+      document.getElementById('readyBox').classList.remove('show');
+      STAGES.forEach(function(s, i){ var el = document.getElementById('stageItem' + i); if(el){ el.classList.remove('on'); el.classList.remove('done'); el.classList.remove('pop'); } });
+      document.getElementById('trackFill').style.width = '0%';
+      document.getElementById('trackPip').style.left = '0%';
+      document.getElementById('countNum').textContent = '1:30';
+      liquidRect.setAttribute('fill', '#e8dcc8');
+      stripesEl.setAttribute('opacity', '0');
+      iceEl.setAttribute('opacity', '0');
+      renderToppings(); refreshSummary();
+      setFace('idle');
+    }
+    document.getElementById('newDrinkBtn').addEventListener('click', function(){
+      resetOrderState();
+      document.getElementById('trackPanel').classList.add('hidden');
+      document.getElementById('orderPanel').classList.remove('hidden');
+      goStep(1);
+      react("Again! Again! Let's build another legend!", 'bounce', 'happy');
+    });
+
+    /* ==================== GAME: BOBA CATCH ==================== */
+    var area = document.getElementById('gameArea');
+    var cup = document.getElementById('gameCup');
+    var overlay = document.getElementById('gameOverlay');
+    var gScoreEl = document.getElementById('gScore'), gComboEl = document.getElementById('gCombo'), gPointsEl = document.getElementById('gPoints');
+    var game = { playing:false, score:0, combo:0, items:[], last:0, spawnAt:0, cupX:0, keys:{}, raf:0, freePlay:false, freeEnd:0, startTs:0, rampFlags:{} };
+    /* gentle difficulty ramp: fall speed and spawn pace ease up the longer a
+       round runs (+2%/s of fall speed, capped at +80%; spawns tighten slowly),
+       plus the existing score-based nudge — noticeable by the end of a round,
+       never a wall at the start */
+    function gameRamp(ts){ return 1 + Math.min(0.8, ((ts - game.startTs)/1000) * 0.02); }
+    function cupW(){ return area.clientWidth; }
+    function setCup(x){
+      game.cupX = Math.max(42, Math.min(cupW()-42, x));
+      cup.style.left = game.cupX + 'px';
+    }
+    setCup(200);
+    function moveHandler(clientX){
+      var r = area.getBoundingClientRect();
+      if(game.playing) setCup(clientX - r.left);
+    }
+    area.addEventListener('pointermove', function(e){ moveHandler(e.clientX); });
+    area.addEventListener('pointerdown', function(e){ moveHandler(e.clientX); });
+    area.addEventListener('touchmove', function(e){ if(e.touches[0]) moveHandler(e.touches[0].clientX); }, {passive:true});
+    document.addEventListener('keydown', function(e){
+      if(e.key==='ArrowLeft') game.keys.l = true;
+      if(e.key==='ArrowRight') game.keys.r = true;
+    });
+    document.addEventListener('keyup', function(e){
+      if(e.key==='ArrowLeft') game.keys.l = false;
+      if(e.key==='ArrowRight') game.keys.r = false;
+    });
+    var ITEM_TYPES = [
+      {kind:'pearl', pts:10, w:46}, {kind:'gold', pts:30, w:7}, {kind:'jelly', pts:15, w:15},
+      {kind:'pudding', pts:15, w:10}, {kind:'ice', pts:-10, w:12, bad:true}, {kind:'lemon', pts:-15, w:10, bad:true}
+    ];
+    function pickType(){
+      var tot = ITEM_TYPES.reduce(function(a,t){return a+t.w;},0), r = Math.random()*tot;
+      for(var i=0;i<ITEM_TYPES.length;i++){ r -= ITEM_TYPES[i].w; if(r<=0) return ITEM_TYPES[i]; }
+      return ITEM_TYPES[0];
+    }
+    function spawnItem(){
+      /* hard cap: a long session or a stalled frame can never pile up
+         hundreds of falling items and choke the phone */
+      if(game.items.length >= 60) return;
+      var t = pickType();
+      var el = document.createElement('div');
+      el.className = 'gi ' + t.kind;
+      var x = 24 + Math.random()*(cupW()-48);
+      el.style.left = x + 'px'; el.style.top = '-18px';
+      area.appendChild(el);
+      game.items.push({el:el, x:x, y:-18, type:t, speed: 130 + Math.random()*90 + Math.min(120, game.score*0.35)});
+    }
+    function scorePop(x, y, text, color){
+      var pops = area.querySelectorAll('.score-pop');
+      if(pops.length > 12) return;
+      var s = document.createElement('div');
+      s.className = 'score-pop'; s.textContent = text; s.style.color = color;
+      s.style.left = x+'px'; s.style.top = y+'px';
+      area.appendChild(s);
+      setTimeout(function(){ s.remove(); }, 820);
+    }
+    function gameLoop(ts){
+      if(!game.playing) return;
+      try{
+      var dt = Math.min(0.05, (ts - game.last)/1000 || 0.016);
+      game.last = ts;
+      if(game.keys.l) setCup(game.cupX - 340*dt);
+      if(game.keys.r) setCup(game.cupX + 340*dt);
+      if(ts > game.spawnAt){ spawnItem(); game.spawnAt = ts + Math.max(320, (640 - game.score*0.5) / gameRamp(ts)); }
+      var ramp = gameRamp(ts);
+      var elapsedS = (ts - game.startTs)/1000;
+      [20, 40].forEach(function(mark){
+        if(elapsedS >= mark && !game.rampFlags[mark]){
+          game.rampFlags[mark] = true;
+          scorePop(cupW()/2, 60, 'Speed up!', '#7a4fd0');
+          if(mark===20) say('The boba is speeding up — stay with me!');
+        }
+      });
+      var H = area.clientHeight;
+      for(var i=game.items.length-1; i>=0; i--){
+        var it = game.items[i];
+        it.y += it.speed * dt * ramp;
+        it.el.style.top = it.y + 'px';
+        var caught = it.y > H - 96 && it.y < H - 18 && Math.abs(it.x - game.cupX) < 52;
+        if(caught){
+          var t = it.type;
+          if(t.bad){
+            game.score = Math.max(0, game.score + t.pts);
+            game.combo = 0;
+            scorePop(it.x, H-110, t.pts, '#d23c2e');
+            blip(140, 0.18, 'sawtooth', 0.05);
+            say(t.kind==='ice' ? 'Ice cube in the cup! Brain freeze — combo gone!' : 'SOUR LEMON! Pucker up — combo gone!');
+          } else {
+            game.combo++;
+            var mult = 1 + Math.floor(game.combo/6);
+            var gain = t.pts * mult;
+            game.score += gain;
+            scorePop(it.x, H-110, '+' + gain, t.kind==='gold' ? '#d98a00' : '#e83e77');
+            blip(t.kind==='gold' ? 980 : 620 + game.combo*22, 0.1, 'sine', 0.055);
+            if(t.kind==='gold') say('GOLDEN PEARL! Jackpot, superstar!');
+            if(game.score >= 150 && !gameJumped){
+              gameJumped = true;
+              pipJumpOut(); jumpOut(roamerInner);
+              say('150 POINTS! I am SO proud I almost jumped out of the screen! Oh wait — I DID!');
+              chime();
+            }
+          }
+          gScoreEl.textContent = game.score;
+          gComboEl.textContent = '×' + (1 + Math.floor(game.combo/6)) + (game.combo? ' ('+game.combo+')' : '');
+          genieFromGame = Math.floor(game.score/10);
+          gPointsEl.textContent = genieFromGame;
+          it.el.remove(); game.items.splice(i,1);
+          continue;
+        }
+        if(it.y > H + 24){
+          if(!it.type.bad){ game.combo = 0; gComboEl.textContent = '×1'; }
+          it.el.remove(); game.items.splice(i,1);
+        }
+      }
+      if(game.freePlay && Date.now() > game.freeEnd){ endGame(false); return; }
+      if(!game.freePlay && orderDone){ endGame(true); return; }
+      game.raf = requestAnimationFrame(gameLoop);
+      }catch(e){
+        if(window.__pipOnError) window.__pipOnError('game', e && e.message);
+        /* never strand the player mid-round: end the round cleanly */
+        try{ endGame(false); }catch(_){ game.playing = false; overlay.classList.remove('hidden'); }
+      }
+    }
+    function startGame(freePlay){
+      game.playing = true; game.score = 0; game.combo = 0; game.freePlay = !!freePlay; gameJumped = false;
+      genieFromGame = 0;
+      gScoreEl.textContent = '0'; gComboEl.textContent = '×1'; gPointsEl.textContent = '0';
+      game.items.forEach(function(it){ it.el.remove(); }); game.items = [];
+      overlay.classList.add('hidden');
+      setCup(cupW()/2);
+      game.last = performance.now(); game.spawnAt = 0; game.startTs = performance.now(); game.rampFlags = {};
+      if(freePlay) game.freeEnd = Date.now() + 45000;
+      cancelAnimationFrame(game.raf);
+      game.raf = requestAnimationFrame(gameLoop);
+      say(freePlay ? 'Free play! 45 seconds — beat your best!' : 'Boba Catch is ON! Catch those pearls while I walk your drink home!');
+      poke();
+    }
+    function endGame(byOrder){
+      if(!game.playing && !byOrder) return;
+      var wasPlaying = game.playing;
+      game.playing = false;
+      cancelAnimationFrame(game.raf);
+      game.items.forEach(function(it){ it.el.remove(); }); game.items = [];
+      if(!wasPlaying) return;
+      genieFromGame = Math.floor(game.score/10);
+      gPointsEl.textContent = genieFromGame;
+      document.getElementById('goTitle').textContent = byOrder ? 'Drink\u2019s ready — great catching!' : 'Time\u2019s up!';
+      document.getElementById('goText').textContent = 'Final score: ' + game.score + ' · You earned ' + genieFromGame + ' Genie Points' + (byOrder ? ' — added to your order reward above!' : '.');
+      document.getElementById('gameStart').textContent = 'Play again';
+      overlay.classList.remove('hidden');
+      if(byOrder && orderDone){
+        var reward = 25 + genieFromGame;
+        document.getElementById('genieReward').textContent = 'You earned ' + reward + ' Genie Points for this order (includes ' + genieFromGame + ' from Boba Catch!)';
+      }
+    }
+    document.getElementById('gameStart').addEventListener('click', function(){
+      startGame(!orderActive || orderDone);
+    });
+
+    /* ==================== VIEW TABS ==================== */
+    var tabDemo = document.getElementById('tabDemo'), tabPitch = document.getElementById('tabPitch');
+    function showView(pitch){
+      document.getElementById('viewDemo').classList.toggle('hidden', pitch);
+      document.getElementById('viewPitch').classList.toggle('hidden', !pitch);
+      tabDemo.classList.toggle('active', !pitch); tabPitch.classList.toggle('active', pitch);
+      tabDemo.setAttribute('aria-selected', String(!pitch)); tabPitch.setAttribute('aria-selected', String(pitch));
+      document.getElementById('demoNote').style.display = pitch ? 'none' : '';
+      roamer.style.display = pitch ? 'none' : '';
+      window.scrollTo({top:0, behavior: REDUCED ? 'auto' : 'smooth'});
+    }
+    tabDemo.addEventListener('click', function(){ showView(false); });
+    tabPitch.addEventListener('click', function(){ showView(true); });
+
+    /* global pause/cleanup: if the tab is hidden or the window loses focus
+       mid-gesture, no input state may stick — drag ends, keys clear, a
+       half-finished shake hold cancels instead of completing off-screen */
+    document.addEventListener('visibilitychange', function(){
+      if(!document.hidden) return;
+      dragging = null;
+      if(typeof game !== 'undefined' && game) game.keys = {};
+      if(shakeHold && !state.shaken){
+        cancelAnimationFrame(shakeHold); shakeHold = null;
+        shakeFill.style.width = '0%';
+        walker.className = 'pip-walker idle';
+      }
+      poke();
+    });
+    window.addEventListener('blur', function(){
+      if(typeof game !== 'undefined' && game) game.keys = {};
+    });
+
+    /* init */
+    renderLiquid(); refreshSummary();
+    if(window.__pipShield) window.__pipShield.ready = true;
+    window.__pipReady = true;
+    setTimeout(function(){ react("Tap a drink below — I'll fill up and dance for you! Then tap ME — I do tricks now!", 'bounce', 'happy', 'none'); }, 600);
+    </script>
+  </body>
+</html>
